@@ -210,11 +210,46 @@ class StripeChecker:
 
             if 'error' in setup_intent:
                 error_msg = setup_intent["error"].get("message", "Unknown error")
+                error_type = setup_intent["error"].get("type", "unknown")
+                error_code = setup_intent["error"].get("code", "unknown")
+                
                 print(f"{RED}❌ Setup Intent Error: {error_msg}{RESET}")
+                
+                # التعامل مع أخطاء 3DS2
+                if "3D Secure 2 is not supported" in error_msg or "3D Secure" in error_msg:
+                    return {
+                        'status': 'DECLINED',
+                        'message': '❌ Card Not Supported (3DS2 Issue)',
+                        'details': {
+                            'check_number': self.check_count,
+                            'status_3ds': 'Not Supported',
+                            'error_type': error_type
+                        },
+                        'time': round(time.time() - start_time, 2)
+                    }
+                
+                # أخطاء البطاقة المرفوضة
+                if error_code in ['card_declined', 'insufficient_funds', 'lost_card', 'stolen_card']:
+                    return {
+                        'status': 'DECLINED',
+                        'message': f'❌ Card Declined - {error_msg}',
+                        'details': {
+                            'check_number': self.check_count,
+                            'status_3ds': 'Declined',
+                            'error_code': error_code
+                        },
+                        'time': round(time.time() - start_time, 2)
+                    }
+                
+                # باقي الأخطاء
                 return {
                     'status': 'ERROR',
                     'message': f'Setup Intent Error - {error_msg}',
-                    'details': {'check_number': self.check_count},
+                    'details': {
+                        'check_number': self.check_count,
+                        'error_type': error_type,
+                        'error_code': error_code
+                    },
                     'time': round(time.time() - start_time, 2)
                 }
 
@@ -233,6 +268,23 @@ class StripeChecker:
                             timeout=20
                         )
                         three_ds_response = response.json()
+                        
+                        # التحقق من وجود خطأ في الـ 3DS2
+                        if 'error' in three_ds_response:
+                            error_msg = three_ds_response['error'].get('message', 'Unknown error')
+                            print(f"{RED}❌ 3DS2 Error: {error_msg}{RESET}")
+                            
+                            if "3D Secure 2 is not supported" in error_msg or "not supported" in error_msg:
+                                return {
+                                    'status': 'DECLINED',
+                                    'message': '❌ 3DS2 Not Supported',
+                                    'details': {
+                                        'check_number': self.check_count,
+                                        'status_3ds': 'Not Supported'
+                                    },
+                                    'time': round(time.time() - start_time, 2)
+                                }
+                        
                         break
                     except Exception as e:
                         if attempt < 2:
@@ -247,14 +299,28 @@ class StripeChecker:
 
                 trans_status = three_ds_response.get('ares', {}).get('transStatus')
                 acs_url = three_ds_response.get('ares', {}).get('acsURL')
+                
+                # لو ما فيش status يبقى في مشكلة
+                if not trans_status and not three_ds_response.get('ares'):
+                    print(f"{RED}❌ No 3DS response data{RESET}")
+                    return {
+                        'status': 'DECLINED',
+                        'message': '❌ 3DS Authentication Failed',
+                        'details': {
+                            'check_number': self.check_count,
+                            'status_3ds': 'Failed',
+                            'session_number': self.session_refresh_count
+                        },
+                        'time': round(time.time() - start_time, 2)
+                    }
 
                 details = {
-                    'status_3ds': trans_status or 'N/A',
+                    'status_3ds': trans_status or 'Failed',
                     'check_number': self.check_count,
                     'session_number': self.session_refresh_count
                 }
                 
-                print(f"{WHITE}🔐 3DS Status: {trans_status}{RESET}")
+                print(f"{WHITE}🔐 3DS Status: {trans_status or 'None'}{RESET}")
                 
                 if trans_status == 'N':
                     print(f"{GREEN}✅ LIVE CARD FOUND!{RESET}")
