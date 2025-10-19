@@ -41,6 +41,9 @@ class StripeChecker:
         self.stripe_headers = None
         self.check_count = 0
         self.session_refresh_count = 0
+        self.consecutive_na_count = 0  # عداد N/A المتتالية
+        self.wait_time = 60  # وقت الانتظار (يبدأ من دقيقة)
+        self.max_wait_time = 3600  # الحد الأقصى للانتظار (ساعة)
         self.initialize_session()
 
     def initialize_session(self):
@@ -302,56 +305,93 @@ class StripeChecker:
                 
                 # لو ما فيش status يبقى في مشكلة
                 if not trans_status and not three_ds_response.get('ares'):
-                    print(f"{RED}❌ No 3DS response data{RESET}")
+                    print(f"{RED}❌ No 3DS response data (N/A){RESET}")
+                    self.consecutive_na_count += 1
+                    
                     return {
-                        'status': 'DECLINED',
-                        'message': '❌ 3DS Authentication Failed',
+                        'status': 'NA',
+                        'message': '❌ N/A - No Response Data',
                         'details': {
                             'check_number': self.check_count,
-                            'status_3ds': 'Failed',
-                            'session_number': self.session_refresh_count
+                            'status_3ds': 'N/A',
+                            'session_number': self.session_refresh_count,
+                            'na_count': self.consecutive_na_count
                         },
                         'time': round(time.time() - start_time, 2)
                     }
 
                 details = {
-                    'status_3ds': trans_status or 'Failed',
+                    'status_3ds': trans_status or 'N/A',
                     'check_number': self.check_count,
                     'session_number': self.session_refresh_count
                 }
                 
-                print(f"{WHITE}🔐 3DS Status: {trans_status or 'None'}{RESET}")
+                print(f"{WHITE}🔐 3DS Status: {trans_status or 'N/A'}{RESET}")
                 
-                if trans_status == 'N':
+                # إعادة تعيين عداد N/A عند النجاح
+                if trans_status:
+                    self.consecutive_na_count = 0
+                    self.wait_time = 60  # إعادة تعيين وقت الانتظار
+                
+                if trans_status == 'Y':
                     print(f"{GREEN}✅ LIVE CARD FOUND!{RESET}")
                     return {
                         'status': 'LIVE',
-                        'message': '✅ Charged Successfully',
+                        'message': '✅ Card Approved',
                         'details': details,
                         'time': round(time.time() - start_time, 2)
                     }
-                elif trans_status in ('R', 'C') and acs_url:
+                elif trans_status == 'N':
+                    print(f"{GREEN}✅ CVV MATCH!{RESET}")
+                    return {
+                        'status': 'LIVE',
+                        'message': '✅ CCN Approved',
+                        'details': details,
+                        'time': round(time.time() - start_time, 2)
+                    }
+                elif trans_status == 'A':
+                    print(f"{GREEN}✅ APPROVED!{RESET}")
+                    return {
+                        'status': 'LIVE',
+                        'message': '✅ Authentication Attempted',
+                        'details': details,
+                        'time': round(time.time() - start_time, 2)
+                    }
+                elif trans_status in ('C', 'R') and acs_url:
                     print(f"{YELLOW}🔐 OTP Required{RESET}")
                     return {
                         'status': 'OTP',
-                        'message': '🔐 3D Secure Challenge Required',
+                        'message': '🔐 OTP Required',
                         'details': details,
                         'time': round(time.time() - start_time, 2)
                     }
-                elif trans_status in ('R', 'C') and not acs_url:
-                    print(f"{RED}❌ Card Declined{RESET}")
+                elif trans_status in ('C', 'R') and not acs_url:
+                    print(f"{RED}❌ Card Rejected{RESET}")
                     return {
                         'status': 'DECLINED',
-                        'message': '❌ Operation Rejected',
+                        'message': '❌ Card Rejected',
+                        'details': details,
+                        'time': round(time.time() - start_time, 2)
+                    }
+                elif trans_status == 'U':
+                    print(f"{YELLOW}⚠️ Unable to Authenticate{RESET}")
+                    return {
+                        'status': 'DECLINED',
+                        'message': '⚠️ Unable to Authenticate',
                         'details': details,
                         'time': round(time.time() - start_time, 2)
                     }
                 else:
                     print(f"{RED}❓ Unknown Status: {trans_status}{RESET}")
+                    self.consecutive_na_count += 1
+                    
                     return {
-                        'status': 'ERROR',
+                        'status': 'NA',
                         'message': f'❓ Unknown Status: {trans_status}',
-                        'details': details,
+                        'details': {
+                            **details,
+                            'na_count': self.consecutive_na_count
+                        },
                         'time': round(time.time() - start_time, 2)
                     }
             else:
@@ -521,12 +561,68 @@ def check_cards_thread(user_id, message):
     
     checker = StripeChecker()
     
-    live = otp = declined = errors = checked = 0
+    live = otp = declined = errors = checked = na_count = 0
     start_time = time.time()
+    should_stop = False
     
     for card in cards:
         if not checking_status.get(user_id, True):
             break
+        
+        # التحقق من N/A المتتالية
+        if checker.consecutive_na_count >= 5:
+            if checker.wait_time >= checker.max_wait_time:
+                # وصلنا للحد الأقصى (ساعة) ولسه في N/A
+                bot.send_message(
+                    user_id,
+                    f"""<b>⛔ Checking Stopped!
+━━━━━━━━━━━━━━━━━━━━
+⚠️ Received 5 consecutive N/A errors
+⏱ Maximum wait time reached (1 hour)
+📊 Checked: {checked}/{total} cards
+
+The gateway might be temporarily unavailable.
+Please try again later.
+━━━━━━━━━━━━━━━━━━━━
+👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
+</b>"""
+                )
+                should_stop = True
+                break
+            
+            # إرسال رسالة الانتظار
+            wait_minutes = checker.wait_time // 60
+            bot.send_message(
+                user_id,
+                f"""<b>⚠️ N/A Detection Alert!
+━━━━━━━━━━━━━━━━━━━━
+🔴 Consecutive N/A: {checker.consecutive_na_count}
+⏸ Pausing checks for {wait_minutes} minute(s)
+🔄 Will retry with fresh session...
+━━━━━━━━━━━━━━━━━━━━
+Please wait...
+</b>"""
+            )
+            
+            print(f"{YELLOW}⏸ Waiting {wait_minutes} minutes due to N/A errors...{RESET}")
+            time.sleep(checker.wait_time)
+            
+            # تجديد الجلسة بالكامل
+            print(f"{YELLOW}🔄 Refreshing session after N/A wait...{RESET}")
+            checker.initialize_session()
+            checker.consecutive_na_count = 0
+            
+            # مضاعفة وقت الانتظار للمرة القادمة
+            checker.wait_time = min(checker.wait_time * 2, checker.max_wait_time)
+            
+            bot.send_message(
+                user_id,
+                f"""<b>✅ Resuming Checks
+━━━━━━━━━━━━━━━━━━━━
+🔄 Session refreshed
+⚡ Continuing from card #{checked + 1}
+</b>"""
+            )
         
         checked += 1
         result = checker.check_card(card)
@@ -545,7 +641,8 @@ def check_cards_thread(user_id, message):
             types.InlineKeyboardButton(f"• LIVE ✅ ➜ [{live}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• OTP 🔐 ➜ [{otp}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Declined ❌ ➜ [{declined}] •", callback_data='x'),
-            types.InlineKeyboardButton(f"• Errors ⚠️ ➜ [{errors}] •", callback_data='x'),
+            types.InlineKeyboardButton(f"• N/A ⚠️ ➜ [{na_count}] •", callback_data='x'),
+            types.InlineKeyboardButton(f"• Errors ❌ ➜ [{errors}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Total ➜ [{checked}/{total}] •", callback_data='x'),
             types.InlineKeyboardButton("⏹ Stop", callback_data='stop_check')
         )
@@ -569,6 +666,8 @@ def check_cards_thread(user_id, message):
             otp += 1
         elif result['status'] == 'DECLINED':
             declined += 1
+        elif result['status'] == 'NA':
+            na_count += 1
         else:
             errors += 1
         
@@ -583,11 +682,7 @@ def check_cards_thread(user_id, message):
         
         next_refresh = 10 - (checked % 10) if checked % 10 != 0 else 10
         
-        try:
-            bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=message.message_id,
-                text=f"""<b>🔥 Gateway: Stripe 3DS
+        status_text = f"""<b>🔥 Gateway: Stripe 3DS
 ━━━━━━━━━━━━━━━━━━━━
 ⏳ Checking in progress...
 {progress_bar}
@@ -595,8 +690,19 @@ def check_cards_thread(user_id, message):
 💳 Current: {card['number'][:6]}...{card['number'][-4:]}
 🔢 Check: {checked}/{total}
 🔄 Session #: {checker.session_refresh_count}
-⏭️ Next Session Refresh: {next_refresh} checks
-</b>""",
+⏭️ Next Session Refresh: {next_refresh} checks"""
+        
+        # إضافة تحذير N/A إذا كان هناك
+        if checker.consecutive_na_count > 0:
+            status_text += f"\n⚠️ Consecutive N/A: {checker.consecutive_na_count}/5"
+        
+        status_text += "\n</b>"
+        
+        try:
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                text=status_text,
                 reply_markup=keyboard
             )
         except:
@@ -605,6 +711,11 @@ def check_cards_thread(user_id, message):
         time.sleep(0.5)
     
     # النتيجة النهائية
+    if should_stop:
+        checking_status[user_id] = False
+        del user_cards[user_id]
+        return
+    
     total_time = time.time() - start_time
     bot.edit_message_text(
         chat_id=message.chat.id,
@@ -616,7 +727,8 @@ def check_cards_thread(user_id, message):
 ├ LIVE ✅: {live}
 ├ OTP 🔐: {otp}
 ├ Declined ❌: {declined}
-├ Errors ⚠️: {errors}
+├ N/A ⚠️: {na_count}
+├ Errors ❌: {errors}
 
 ⏱ Stats:
 ├ Time: {int(total_time)}s
