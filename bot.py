@@ -9,7 +9,7 @@ import time
 from typing import Dict, List, Tuple
 import threading
 
-TOKEN = "8166484030:AAGiBsKby2GF0ykoxvkKMHCu80lHUIfD6xg"
+TOKEN = "8334507568:AAHp9fsFTOigfWKGBnpiThKqrDast5y-4cU"
 ADMIN_ID = 5895491379
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
