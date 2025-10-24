@@ -42,9 +42,9 @@ class BraintreeChecker:
     'PHPSESSID': 'd011947fd056da31f43f1c2879c8bc4e',
     '_identity': '%5B1634093%2C%22%22%2C1800%5D',
     '_li_ns': '1',
-    '_csrf': '-2DtD47U5CGxqtC798dJAiT7SNVEsm2G7tkoRyhCjsK-Ubt_wuCLeNXQocLaqz1oTKwimBDlCPWpnWwjfDXXqQ%3D%3D',
-    '_clsk': '1f48kid%5E1761290804297%5E3%5E1%5Ez.clarity.ms%2Fcollect',
-    '_ga_5WDMLTHHFH': 'GS2.1.s1761290791$o13$g1$t1761290851$j60$l0$h1691275012',
+    '_csrf': 'YImU_pGyDXBvIhjgfY2i7rUisarpYfZ6UxZivjAq3Ks11v-6zv5BGC4bb4MV7-Cb1krJmJ4ixgohfjr5ABye0g%3D%3D',
+    '_ga_5WDMLTHHFH': 'GS2.1.s1761290791$o13$g1$t1761291434$j58$l0$h1691275012',
+    '_clsk': '1f48kid%5E1761291434642%5E7%5E1%5Ez.clarity.ms%2Fcollect',
         }
         self.auth_fingerprint = None
         
@@ -88,7 +88,7 @@ class BraintreeChecker:
                 'clientSdkMetadata': {
                     'source': 'client',
                     'integration': 'custom',
-                    'sessionId': '03107da1-e3e7-4858-98d9-3f7a4f362b49',
+                    'sessionId': '89af67ae-2108-4305-a696-898ba9ecc825',
                 },
                 'query': 'mutation TokenizeCreditCard($input: TokenizeCreditCardInput!) {   tokenizeCreditCard(input: $input) {     token     creditCard {       bin       brandCode       last4       binData {         issuingBank         countryOfIssuance       }     }   } }',
                 'variables': {
@@ -159,7 +159,7 @@ class BraintreeChecker:
                     'source': 'client',
                     'integration': 'custom',
                     'integrationType': 'custom',
-                    'sessionId': '03107da1-e3e7-4858-98d9-3f7a4f362b49',
+                    'sessionId': '89af67ae-2108-4305-a696-898ba9ecc825',
                 },
             }
             
