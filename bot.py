@@ -82,7 +82,7 @@ class BraintreeChecker:
                 'clientSdkMetadata': {
                     'source': 'client',
                     'integration': 'custom',
-                    'sessionId': '8de384d6-4c78-461e-be01-4051bbb967ed',
+                    'sessionId': '353f3db3-8600-42a0-8f27-9289bcf8675e',
                 },
                 'query': 'mutation TokenizeCreditCard($input: TokenizeCreditCardInput!) {   tokenizeCreditCard(input: $input) {     token     creditCard {       bin       brandCode       last4       binData {         issuingBank         countryOfIssuance       }     }   } }',
                 'variables': {
@@ -153,7 +153,7 @@ class BraintreeChecker:
                     'source': 'client',
                     'integration': 'custom',
                     'integrationType': 'custom',
-                    'sessionId': '8de384d6-4c78-461e-be01-4051bbb967ed',
+                    'sessionId': '353f3db3-8600-42a0-8f27-9289bcf8675e',
                 },
             }
             
