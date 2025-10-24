@@ -34,9 +34,11 @@ class BraintreeChecker:
     '_li_ns': '1',
     'device_1635471': '4a95a168-6660-4b44-a6cf-7966696a1622',
     'cfz_zaraz-analytics': '%7B%22_cfa_clientId%22%3A%7B%22v%22%3A%2254663788723121320%22%2C%22e%22%3A1792827846763%7D%2C%22_cfa_sId%22%3A%7B%22v%22%3A%2253343958431082936%22%2C%22e%22%3A1761293662211%7D%7D',
-    '_clsk': '1f48kid%5E1761291932356%5E13%5E1%5Ez.clarity.ms%2Fcollect',
-    '_ga_5WDMLTHHFH': 'GS2.1.s1761291848$o1$g1$t1761291932$j39$l0$h1666767297',
-    '_csrf': 'ribEJ7vIsC-yAGaYQMI6QX4sYOvvF0i9DhsNLmERNj7naYJu6fvIZvt4D8438g0GRkgDnJ5fDIo3bmh3U1hRWg%3D%3D',
+    'intercom-session-pwyqj8en': 'MHVnVGRneUpqVFB0bGNENGY4M0h6RHBlWWVaVFF0V3k2WklZZHRURi9VMnlQUjNQSStuNS9CZ2xGUU9DZ0FOekJONC9IQlRtR0J1QWVwSU5nMWJGK1VlenE4TjB0aGprZjJISEcyWXpxU1E9LS13S3RGQ0FkSGdFM2d0U1RiUWhmWUJ3PT0=--b0bf5eacafb23ce37220e20dd111e4ee246457e2',
+    'intercom-device-id-pwyqj8en': '1845c956-13b4-468c-95f0-cdaddc375d18',
+    '_csrf': 'yd35Lz-4bvgJoAhi7ClOrge_pgxV_oxNQPXtGvrJux-vsK5CR84iqGHqSgmeaHb_TPrxZRaf_AYFnIFCy7P4fQ%3D%3D',
+    '_ga_5WDMLTHHFH': 'GS2.1.s1761291848$o1$g1$t1761292980$j30$l0$h1666767297',
+    '_clsk': '1f48kid%5E1761292981284%5E16%5E1%5Ez.clarity.ms%2Fcollect',
         }
         self.auth_fingerprint = None
         
